@@ -13,12 +13,14 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/contact/contact_launcher.dart';
 import '../../../core/motion/motion.dart';
 import '../../../core/signature/signature.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/app_sheet.dart';
+import '../../members/widgets/due_cue.dart';
 import '../../members/widgets/renew_sheet.dart';
 import '../data/dues_providers.dart';
 
@@ -40,12 +42,21 @@ class DuesCard extends ConsumerWidget {
     final palette = context.palette;
     final current = e.current;
     final amount = current?.planAmount;
+    // One status colour per bucket — the exact one `DueRing` sweeps — so the
+    // due line and the ring read the same way (DESIGN.md §4).
+    final status = dueTextColor(palette, e.bucket);
     // One caption, one idea: the gym (All-gyms feed only), the plan, the date.
-    final caption = [
-      if (e.gymName != null) e.gymName!,
-      if (current != null) current.planName ?? 'Add a plan',
-      e.dueLine(),
-    ].join(' · ');
+    // Gym/plan stay secondary; the due line carries the bucket colour and its
+    // own wording, so the stage never depends on colour alone.
+    final caption = <InlineSpan>[
+      if (e.gymName != null) TextSpan(text: '${e.gymName!} · '),
+      if (current != null)
+        TextSpan(text: '${current.planName ?? 'Add a plan'} · '),
+      TextSpan(
+        text: e.dueLine(),
+        style: TextStyle(color: status, fontWeight: FontWeight.w600),
+      ),
+    ];
 
     return StaggeredEntrance(
       index: index,
@@ -75,8 +86,8 @@ class DuesCard extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(height: AppSpace.xs),
-                      Text(
-                        caption,
+                      Text.rich(
+                        TextSpan(children: caption),
                         style: AppType.caption
                             .copyWith(color: palette.secondary),
                       ),
@@ -130,13 +141,14 @@ class DuesCard extends ConsumerWidget {
                 _DuesIconAction(
                   icon: Icons.call,
                   label: 'Call',
-                  onTap: () => _call(e.member.phone),
+                  onTap: () => ContactLauncher.call(context, e.member.phone),
                 ),
                 const SizedBox(width: AppSpace.sm),
                 _DuesIconAction(
                   icon: Icons.chat,
                   label: 'WhatsApp',
-                  onTap: () => _whatsapp(e.member.phone),
+                  onTap: () =>
+                      ContactLauncher.openWhatsApp(context, e.member.phone),
                 ),
               ],
             ),
@@ -149,31 +161,14 @@ class DuesCard extends ConsumerWidget {
   void _openRenew(BuildContext context, WidgetRef ref, DuesEntry e) {
     // One press, one haptic: a modal surface is arriving.
     Haptics.sheet();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
+    showAppSheet<void>(
+      context,
       builder: (_) => RenewSheet(
         gymId: e.member.gymId,
         memberId: e.member.id,
         current: e.current,
       ),
     ).then((_) => invalidateDuesViews(ref));
-  }
-
-  Future<void> _call(String phone) async {
-    // A control was pressed; the dialer is the visible change that follows.
-    Haptics.impact();
-    final uri = Uri(scheme: 'tel', path: phone.trim());
-    if (await canLaunchUrl(uri)) await launchUrl(uri);
-  }
-
-  Future<void> _whatsapp(String phone) async {
-    Haptics.impact();
-    final digits = phone.replaceAll(RegExp(r'\D'), '');
-    final uri = Uri.parse('https://wa.me/$digits');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
   }
 }
 

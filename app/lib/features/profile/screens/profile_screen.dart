@@ -103,6 +103,10 @@ class ProfileScreen extends ConsumerWidget {
     );
     if (confirmed != true) return;
 
+    // The selection belongs to the session that is ending: clear it here,
+    // while this ref is still alive, so the next sign-in never starts scoped
+    // to a gym it may not own.
+    await ref.read(selectedGymIdProvider.notifier).setGym(null);
     await ref.read(authRepositoryProvider).signOut();
     if (!context.mounted) return;
     // Destructive commitment accepted, then the fact — never a bare silent

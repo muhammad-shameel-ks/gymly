@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/motion/motion.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/app_sheet.dart';
 import '../application/leads_providers.dart';
 import '../data/inquiries_repository.dart';
 import '../data/inquiry.dart';
@@ -34,8 +35,8 @@ Future<void> showConvertSheet(BuildContext context, Inquiry inquiry,
     reduceMotion: AppMotionConfig.reduceMotionOf(context),
   );
   try {
-    await showModalBottomSheet<void>(
-      context: context,
+    await showAppSheet<void>(
+      context,
       transitionAnimationController: controller,
       builder: (_) => _ConvertForm(inquiry: inquiry, onConverted: onConverted),
     );
@@ -115,27 +116,21 @@ class _ConvertFormState extends ConsumerState<_ConvertForm> {
   Widget build(BuildContext context) {
     final plans = ref.watch(convertPlansProvider);
     final converting = ref.watch(leadsControllerProvider).isLoading;
-    return SafeArea(
-      // The confirmation covers the form in place, so the sheet does not resize.
+    return AppSheet(
+      title: 'Convert ${widget.inquiry.name}',
+      subtitle: widget.inquiry.phone,
+      // The confirmation covers the form in place, so the sheet does not resize
+      // and the body owns its own scrolling behind it.
+      scrollable: false,
       child: Stack(
         children: [
           IgnorePointer(
             ignoring: _converted,
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpace.screen, AppSpace.md, AppSpace.screen, 24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('Convert ${widget.inquiry.name}',
-                      style: AppType.subtitle
-                          .copyWith(color: context.palette.text)),
-                  const SizedBox(height: 4),
-                  Text(widget.inquiry.phone,
-                      style: AppType.caption
-                          .copyWith(color: context.palette.secondary)),
-                  const SizedBox(height: AppSpace.md),
                   Text('First plan',
                       style: AppType.body
                           .copyWith(color: context.palette.text)),

@@ -68,6 +68,12 @@ abstract final class AppTheme {
         backgroundColor: p.surface,
         surfaceTintColor: Colors.transparent,
         modalBarrierColor: Colors.black.withValues(alpha: 0.55),
+        // The one grabber pill above every sheet (`showAppSheet`): one neutral
+        // hairline-width capsule, ~32×5, centred — `border`, never a hex
+        // (DESIGN.md §4, “Sheets”). The framework's 48 dp strip around it stays
+        // the drag target.
+        dragHandleColor: p.border,
+        dragHandleSize: const Size(32, 5),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(
             top: Radius.circular(AppRadius.sheet),

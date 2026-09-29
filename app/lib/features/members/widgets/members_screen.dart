@@ -2,6 +2,9 @@
 ///
 /// Requires a single [gymId]; a null gym shows [PickGymPrompt] (other tabs
 /// filter to one gym — only Home aggregates "All gyms").
+/// Adding a member is the tab's FAB — same place, same dimmed-when-gym-less
+/// treatment as the Leads tab — plus the empty state's own CTA; search is the
+/// shared [AppSearchBar], so members and leads are pixel-identical.
 /// Tapping a row pushes [MemberDetailScreen]; rows stagger in once per visit.
 /// The last loaded rows stay on screen while the next query loads, so typing
 /// never flashes a skeleton and never replays that entrance.
@@ -13,6 +16,9 @@ import 'package:intl/intl.dart';
 
 import '../../../core/motion/motion.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/app_search_bar.dart';
+import '../../../core/widgets/app_sheet.dart';
 import '../models/member.dart';
 import '../providers/members_providers.dart';
 import 'due_cue.dart';
@@ -49,9 +55,8 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
     final gymId = widget.gymId;
     if (gymId == null) return;
     Haptics.sheet();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
+    showAppSheet<void>(
+      context,
       builder: (_) => MemberFormSheet(gymId: gymId),
     );
   }
@@ -80,6 +85,8 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
     return ListView.separated(
       itemCount: rows.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
+      // FAB height plus a token gap: the last row never hides under it.
+      padding: const EdgeInsets.only(bottom: 56 + AppSpace.lg),
       itemBuilder: (_, i) {
         final e = rows[i];
         return StaggeredEntrance(
@@ -101,65 +108,88 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
     );
   }
 
+  /// The add-member action, in the thumb zone on every list state — the same
+  /// place the Leads tab puts its own (item 1). With no gym selected it stays
+  /// visible but dimmed and inert, so it still reads as the way to add a member.
+  Widget _addFab(bool canAdd) {
+    final palette = context.palette;
+    return TapScale(
+      enabled: canAdd,
+      // The create flow fires Haptics.sheet() when the sheet arrives.
+      enableHaptic: false,
+      child: FloatingActionButton.extended(
+        onPressed: canAdd ? _openCreate : null,
+        // Disabled reads as disabled: dimmed fill, flat, no ripple (the
+        // framework drops the ink when `onPressed` is null).
+        backgroundColor: canAdd ? palette.accent : palette.border,
+        foregroundColor: canAdd ? palette.onAccent : palette.secondary,
+        elevation: canAdd ? null : 0,
+        focusElevation: canAdd ? null : 0,
+        hoverElevation: canAdd ? null : 0,
+        highlightElevation: canAdd ? null : 0,
+        disabledElevation: 0,
+        icon: Icon(
+          Icons.add,
+          color: canAdd ? palette.onAccent : palette.secondary,
+        ),
+        label: const Text('Add member'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final gymId = widget.gymId;
-    if (gymId == null) return const PickGymPrompt();
+    if (gymId == null) {
+      return Scaffold(
+        backgroundColor: context.palette.bg,
+        floatingActionButton: _addFab(false),
+        body: const PickGymPrompt(),
+      );
+    }
     final q = (gymId: gymId, query: _query);
     final list = ref.watch(membersListProvider(q));
 
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          children: [
-            const SizedBox(height: 8),
-            SearchBar(
-              controller: _search,
-              hintText: 'Search by name or phone',
-              onChanged: (v) => setState(() => _query = v),
-              leading: const Icon(Icons.search),
-              trailing: _query.isEmpty
-                  ? null
-                  : [
-                      TapScale(
-                        child: IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            Haptics.impact();
-                            _search.clear();
-                            setState(() => _query = '');
-                          },
-                        ),
-                      ),
-                    ],
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: list.when(
-                skipLoadingOnReload: true,
-                loading: () {
-                  final rows = _rows;
-                  return rows == null
-                      ? const MemberListSkeleton()
-                      : _list(rows, gymId);
-                },
-                error: (_, _) => MemberError(
-                  onRetry: () => ref.invalidate(membersListProvider(q)),
-                ),
-                data: (rows) {
-                  _rows = rows.isEmpty ? null : rows;
-                  if (rows.isEmpty) {
-                    return MemberEmpty(
-                      query: _query,
-                      onCreate: _openCreate,
-                    );
-                  }
-                  return _list(rows, gymId);
-                },
+    return Scaffold(
+      backgroundColor: context.palette.bg,
+      floatingActionButton: _addFab(true),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            children: [
+              const SizedBox(height: 8),
+              AppSearchBar(
+                controller: _search,
+                onChanged: (v) => setState(() => _query = v),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              Expanded(
+                child: list.when(
+                  skipLoadingOnReload: true,
+                  loading: () {
+                    final rows = _rows;
+                    return rows == null
+                        ? const MemberListSkeleton()
+                        : _list(rows, gymId);
+                  },
+                  error: (_, _) => MemberError(
+                    onRetry: () => ref.invalidate(membersListProvider(q)),
+                  ),
+                  data: (rows) {
+                    _rows = rows.isEmpty ? null : rows;
+                    if (rows.isEmpty) {
+                      return MemberEmpty(
+                        query: _query,
+                        onCreate: _openCreate,
+                      );
+                    }
+                    return _list(rows, gymId);
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

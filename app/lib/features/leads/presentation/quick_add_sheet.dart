@@ -9,8 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/motion/motion.dart';
-import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/app_sheet.dart';
 import '../application/leads_providers.dart';
 import '../data/lead_validators.dart';
 
@@ -21,9 +21,8 @@ Future<void> showQuickAddSheet(BuildContext context) async {
     reduceMotion: AppMotionConfig.reduceMotionOf(context),
   );
   try {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
+    await showAppSheet<void>(
+      context,
       transitionAnimationController: controller,
       builder: (_) => const _QuickAddForm(),
     );
@@ -92,73 +91,61 @@ class _QuickAddFormState extends ConsumerState<_QuickAddForm> {
   @override
   Widget build(BuildContext context) {
     final saving = ref.watch(leadsControllerProvider).isLoading;
-    final insets = MediaQuery.of(context).viewInsets.bottom;
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(
-            AppSpace.screen, AppSpace.md, AppSpace.screen, insets + 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            RiseIn(
-              child: Text('New lead',
-                  style:
-                      AppType.subtitle.copyWith(color: context.palette.text)),
+    return AppSheet(
+      title: 'New lead',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          StaggeredEntrance(
+            index: 0,
+            child: TextField(
+              controller: _name,
+              textCapitalization: TextCapitalization.words,
+              decoration:
+                  InputDecoration(labelText: 'Name', errorText: _nameError),
             ),
-            const SizedBox(height: AppSpace.md),
-            StaggeredEntrance(
-              index: 0,
-              child: TextField(
-                controller: _name,
-                textCapitalization: TextCapitalization.words,
-                decoration: InputDecoration(
-                    labelText: 'Name', errorText: _nameError),
-              ),
+          ),
+          const SizedBox(height: AppSpace.sm),
+          StaggeredEntrance(
+            index: 1,
+            child: TextField(
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              decoration:
+                  InputDecoration(labelText: 'Phone', errorText: _phoneError),
             ),
-            const SizedBox(height: AppSpace.sm),
-            StaggeredEntrance(
-              index: 1,
-              child: TextField(
-                controller: _phone,
-                keyboardType: TextInputType.phone,
-                decoration: InputDecoration(
-                    labelText: 'Phone', errorText: _phoneError),
-              ),
+          ),
+          const SizedBox(height: AppSpace.sm),
+          StaggeredEntrance(
+            index: 2,
+            child: TextField(
+              controller: _note,
+              maxLines: 2,
+              decoration: const InputDecoration(labelText: 'Note (optional)'),
             ),
-            const SizedBox(height: AppSpace.sm),
-            StaggeredEntrance(
-              index: 2,
-              child: TextField(
-                controller: _note,
-                maxLines: 2,
-                decoration:
-                    const InputDecoration(labelText: 'Note (optional)'),
-              ),
-            ),
-            const SizedBox(height: AppSpace.md),
-            StaggeredEntrance(
-              index: 3,
-              child: TapScale(
-                // Press feedback only; saving carries the outcome haptic.
-                enabled: !saving,
-                child: SizedBox(
-                  height: 48,
-                  child: FilledButton(
-                    onPressed: saving ? null : _save,
-                    child: saving
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child:
-                                CircularProgressIndicator(strokeWidth: 2))
-                        : const Text('Add lead'),
-                  ),
+          ),
+          const SizedBox(height: AppSpace.md),
+          StaggeredEntrance(
+            index: 3,
+            child: TapScale(
+              // Press feedback only; saving carries the outcome haptic.
+              enabled: !saving,
+              child: SizedBox(
+                height: 48,
+                child: FilledButton(
+                  onPressed: saving ? null : _save,
+                  child: saving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Add lead'),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

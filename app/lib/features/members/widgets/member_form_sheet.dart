@@ -5,7 +5,8 @@
 /// plus a link to the existing member's detail. Create mode offers a plan
 /// picker (from the plans table) to assign the first subscription.
 ///
-/// Content staggers in once per open, the primary CTA carries its busy state
+/// Content staggers in once per open on the shared [AppSheet] chrome (surface,
+/// radius, keyboard inset, title), the primary CTA carries its busy state
 /// in-button (no full-screen spinner), and every outcome is haptically
 /// confirmed: success on save, error on a refused save or a duplicate phone.
 library;
@@ -15,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/motion/motion.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/widgets/app_sheet.dart';
 import '../data/members_repository.dart';
 import '../models/member.dart';
 import '../providers/members_providers.dart';
@@ -144,148 +146,133 @@ class _MemberFormSheetState extends ConsumerState<MemberFormSheet> {
     final plans = _editing
         ? null
         : ref.watch(plansForGymProvider(widget.gymId));
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + bottom),
-        child: Form(
-          key: _form,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              StaggeredEntrance(
-                index: 0,
-                child: Text(
-                  _editing ? 'Edit member' : 'New member',
-                  style: TextStyle(
-                    color: context.palette.text,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+    return AppSheet(
+      title: _editing ? 'Edit member' : 'New member',
+      child: Form(
+        key: _form,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            StaggeredEntrance(
+              index: 0,
+              child: TextFormField(
+                controller: _name,
+                decoration: const InputDecoration(labelText: 'Name'),
+                textCapitalization: TextCapitalization.words,
+                validator: _nameError,
               ),
-              const SizedBox(height: 16),
-              StaggeredEntrance(
-                index: 1,
-                child: TextFormField(
-                  controller: _name,
-                  decoration: const InputDecoration(labelText: 'Name'),
-                  textCapitalization: TextCapitalization.words,
-                  validator: _nameError,
-                ),
+            ),
+            const SizedBox(height: 8),
+            StaggeredEntrance(
+              index: 1,
+              child: TextFormField(
+                controller: _phone,
+                decoration: const InputDecoration(labelText: 'Phone'),
+                keyboardType: TextInputType.phone,
+                validator: _phoneError,
               ),
-              const SizedBox(height: 8),
-              StaggeredEntrance(
-                index: 2,
-                child: TextFormField(
-                  controller: _phone,
-                  decoration: const InputDecoration(labelText: 'Phone'),
-                  keyboardType: TextInputType.phone,
-                  validator: _phoneError,
+            ),
+            const SizedBox(height: 8),
+            StaggeredEntrance(
+              index: 2,
+              child: TextFormField(
+                controller: _note,
+                decoration: const InputDecoration(
+                  labelText: 'Note (optional)',
                 ),
+                maxLines: 2,
               ),
+            ),
+            if (!_editing) ...[
               const SizedBox(height: 8),
               StaggeredEntrance(
                 index: 3,
-                child: TextFormField(
-                  controller: _note,
-                  decoration: const InputDecoration(
-                    labelText: 'Note (optional)',
-                  ),
-                  maxLines: 2,
-                ),
+                child: plans?.when(
+                      loading: () => const Shimmer(
+                        child: ShimmerBox(height: 56),
+                      ),
+                      error: (_, _) => const SizedBox.shrink(),
+                      data: (ps) => DropdownButtonFormField<String>(
+                        initialValue: _planId,
+                        decoration: const InputDecoration(
+                          labelText: 'Plan (optional)',
+                        ),
+                        items: [
+                          const DropdownMenuItem<String>(
+                            value: null,
+                            child: Text('No plan yet'),
+                          ),
+                          for (final p in ps)
+                            DropdownMenuItem(
+                              value: p.id,
+                              child: Text(p.label),
+                            ),
+                        ],
+                        onChanged: (v) {
+                          Haptics.select();
+                          setState(() => _planId = v);
+                        },
+                      ),
+                    ) ??
+                    const SizedBox.shrink(),
               ),
-              if (!_editing) ...[
-                const SizedBox(height: 8),
-                StaggeredEntrance(
-                  index: 4,
-                  child: plans?.when(
-                        loading: () => const Shimmer(
-                          child: ShimmerBox(height: 56),
-                        ),
-                        error: (_, _) => const SizedBox.shrink(),
-                        data: (ps) => DropdownButtonFormField<String>(
-                          initialValue: _planId,
-                          decoration: const InputDecoration(
-                            labelText: 'Plan (optional)',
-                          ),
-                          items: [
-                            const DropdownMenuItem<String>(
-                              value: null,
-                              child: Text('No plan yet'),
-                            ),
-                            for (final p in ps)
-                              DropdownMenuItem(
-                                value: p.id,
-                                child: Text(p.label),
-                              ),
-                          ],
-                          onChanged: (v) {
-                            Haptics.select();
-                            setState(() => _planId = v);
-                          },
-                        ),
-                      ) ??
-                      const SizedBox.shrink(),
-                ),
-              ],
-              if (_duplicate != null) ...[
-                const SizedBox(height: 12),
-                RiseIn(
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: context.palette.bg,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: context.palette.warning),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${_duplicate!.name} is already a member.',
-                            style: TextStyle(
-                              color: context.palette.text,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
-                        TapScale(
-                          child: TextButton(
-                            onPressed: _openDuplicate,
-                            child: Text('Open ${_duplicate!.name}'),
-                          ),
-                        ),
-                      ],
-                    ),
+            ],
+            if (_duplicate != null) ...[
+              const SizedBox(height: 12),
+              RiseIn(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: context.palette.bg,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: context.palette.warning),
                   ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              StaggeredEntrance(
-                index: 5,
-                child: SizedBox(
-                  height: 48,
-                  child: TapScale(
-                    enabled: !_saving,
-                    enableHaptic: false,
-                    child: FilledButton(
-                      onPressed: _saving ? null : _save,
-                      child: _saving
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2),
-                            )
-                          : Text(_editing ? 'Save member' : 'Add member'),
-                    ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${_duplicate!.name} is already a member.',
+                          style: TextStyle(
+                            color: context.palette.text,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                      TapScale(
+                        child: TextButton(
+                          onPressed: _openDuplicate,
+                          child: Text('Open ${_duplicate!.name}'),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ],
-          ),
+            const SizedBox(height: 16),
+            StaggeredEntrance(
+              index: 4,
+              child: SizedBox(
+                height: 48,
+                child: TapScale(
+                  enabled: !_saving,
+                  enableHaptic: false,
+                  child: FilledButton(
+                    onPressed: _saving ? null : _save,
+                    child: _saving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child:
+                                CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(_editing ? 'Save member' : 'Add member'),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

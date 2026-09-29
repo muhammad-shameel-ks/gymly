@@ -41,5 +41,23 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Phone dialer for `ContactLauncher.call` (`tel:` URLs). -->
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
+        </intent>
+        <!-- `https://wa.me/...` links for `ContactLauncher.openWhatsApp`. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+            <data android:host="wa.me"/>
+        </intent>
+        <!-- Direct `whatsapp:` scheme. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="whatsapp"/>
+        </intent>
+        <!-- The WhatsApp app itself, so package visibility resolves. -->
+        <package android:name="com.whatsapp"/>
     </queries>
 </manifest>

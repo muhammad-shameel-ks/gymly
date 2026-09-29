@@ -6,9 +6,10 @@
 /// reference it the repository throws [ReferencedPlanException] and this
 /// sheet keeps the plan and shows the friendly block message instead.
 ///
-/// Motion: the sheet's three sections (title → fields → actions) stagger in
-/// once per open via [StaggeredEntrance]; the blocked-archive warning rises in
-/// where it appears ([RiseIn]); both buttons carry the shared press feedback
+/// Motion: the sheet's body sections (fields → actions) stagger in once per
+/// open via [StaggeredEntrance] on the shared [AppSheet] chrome (surface,
+/// radius, keyboard inset, title); the blocked-archive warning rises in where
+/// it appears ([RiseIn]); both buttons carry the shared press feedback
 /// ([TapScale]) and drop translation under Reduce Motion like every primitive.
 ///
 /// Haptics are the outcome of the gesture, one per gesture:
@@ -27,6 +28,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/motion/motion.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/app_sheet.dart';
 import '../data/plan_validators.dart';
 import '../data/plans_repository.dart';
 import '../models/plan.dart';
@@ -173,154 +175,136 @@ class _PlanFormSheetState extends ConsumerState<PlanFormSheet> {
           hintText: hint,
         );
 
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: AppSpace.screen,
-          right: AppSpace.screen,
-          top: AppSpace.md,
-          bottom: AppSpace.md + MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: Form(
-          key: _form,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                StaggeredEntrance(
-                  index: 0,
-                  child: Text(
-                    _editing ? 'Edit plan' : 'New plan',
-                    style: AppType.subtitle.copyWith(color: palette.text),
+    return AppSheet(
+      title: _editing ? 'Edit plan' : 'New plan',
+      child: Form(
+        key: _form,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            StaggeredEntrance(
+              index: 0,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextFormField(
+                    controller: _name,
+                    style: textStyle,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: deco('Name', 'e.g. 3 months'),
+                    validator: (v) {
+                      final err = validatePlanForm(
+                        name: v ?? '',
+                        amount: _amount.text,
+                        durationDays: _days.text,
+                      );
+                      return err.name;
+                    },
                   ),
-                ),
-                const SizedBox(height: AppSpace.md),
-                StaggeredEntrance(
-                  index: 1,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                  const SizedBox(height: AppSpace.gap),
+                  Row(
                     children: [
-                      TextFormField(
-                        controller: _name,
-                        style: textStyle,
-                        textCapitalization: TextCapitalization.words,
-                        decoration: deco('Name', 'e.g. 3 months'),
-                        validator: (v) {
-                          final err = validatePlanForm(
-                            name: v ?? '',
-                            amount: _amount.text,
-                            durationDays: _days.text,
-                          );
-                          return err.name;
-                        },
+                      Expanded(
+                        child: TextFormField(
+                          controller: _amount,
+                          style: textStyle,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: deco('Amount (₹)', 'e.g. 3333'),
+                          validator: (v) {
+                            final err = validatePlanForm(
+                              name: _name.text,
+                              amount: v ?? '',
+                              durationDays: _days.text,
+                            );
+                            return err.amount;
+                          },
+                        ),
                       ),
-                      const SizedBox(height: AppSpace.gap),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: _amount,
-                              style: textStyle,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
-                              decoration: deco('Amount (₹)', 'e.g. 3333'),
-                              validator: (v) {
-                                final err = validatePlanForm(
-                                  name: _name.text,
-                                  amount: v ?? '',
-                                  durationDays: _days.text,
-                                );
-                                return err.amount;
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: AppSpace.gap),
-                          Expanded(
-                            child: TextFormField(
-                              controller: _days,
-                              style: textStyle,
-                              keyboardType: TextInputType.number,
-                              decoration:
-                                  deco('Duration (days)', 'e.g. 90'),
-                              validator: (v) {
-                                final err = validatePlanForm(
-                                  name: _name.text,
-                                  amount: _amount.text,
-                                  durationDays: v ?? '',
-                                );
-                                return err.durationDays;
-                              },
-                            ),
-                          ),
-                        ],
+                      const SizedBox(width: AppSpace.gap),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _days,
+                          style: textStyle,
+                          keyboardType: TextInputType.number,
+                          decoration: deco('Duration (days)', 'e.g. 90'),
+                          validator: (v) {
+                            final err = validatePlanForm(
+                              name: _name.text,
+                              amount: _amount.text,
+                              durationDays: v ?? '',
+                            );
+                            return err.durationDays;
+                          },
+                        ),
                       ),
                     ],
                   ),
-                ),
-                if (_archiveBlock != null) ...[
-                  const SizedBox(height: 12),
-                  RiseIn(child: _ArchiveBlockWarning(block: _archiveBlock!)),
                 ],
-                const SizedBox(height: AppSpace.md),
-                StaggeredEntrance(
-                  index: 2,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SizedBox(
-                        height: 48,
-                        child: TapScale(
-                          enabled: !_saving,
-                          child: FilledButton(
-                            onPressed: _saving ? null : _save,
-                            style: FilledButton.styleFrom(
-                              disabledBackgroundColor:
-                                  palette.accent.withValues(alpha: 0.45),
-                              disabledForegroundColor:
-                                  palette.onAccent.withValues(alpha: 0.6),
-                              textStyle: AppType.body
-                                  .copyWith(fontWeight: FontWeight.w700),
-                            ),
-                            child: Text(
-                              _saving
-                                  ? 'Saving…'
-                                  : _editing
-                                      ? 'Save plan'
-                                      : 'Add plan',
-                            ),
+              ),
+            ),
+            if (_archiveBlock != null) ...[
+              const SizedBox(height: 12),
+              RiseIn(child: _ArchiveBlockWarning(block: _archiveBlock!)),
+            ],
+            const SizedBox(height: AppSpace.md),
+            StaggeredEntrance(
+              index: 1,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(
+                    height: 48,
+                    child: TapScale(
+                      enabled: !_saving,
+                      child: FilledButton(
+                        onPressed: _saving ? null : _save,
+                        style: FilledButton.styleFrom(
+                          disabledBackgroundColor:
+                              palette.accent.withValues(alpha: 0.45),
+                          disabledForegroundColor:
+                              palette.onAccent.withValues(alpha: 0.6),
+                          textStyle: AppType.body
+                              .copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        child: Text(
+                          _saving
+                              ? 'Saving…'
+                              : _editing
+                                  ? 'Save plan'
+                                  : 'Add plan',
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (_editing) ...[
+                    const SizedBox(height: AppSpace.sm),
+                    SizedBox(
+                      height: 48,
+                      child: TapScale(
+                        enabled: !_archiving,
+                        child: OutlinedButton.icon(
+                          onPressed: _archiving ? null : _archive,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: palette.text,
+                          ),
+                          icon: const Icon(Icons.archive_outlined),
+                          label: Text(
+                            _archiving ? 'Archiving…' : 'Archive plan',
                           ),
                         ),
                       ),
-                      if (_editing) ...[
-                        const SizedBox(height: AppSpace.sm),
-                        SizedBox(
-                          height: 48,
-                          child: TapScale(
-                            enabled: !_archiving,
-                            child: OutlinedButton.icon(
-                              onPressed: _archiving ? null : _archive,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: palette.text,
-                              ),
-                              icon: const Icon(Icons.archive_outlined),
-                              label: Text(
-                                _archiving ? 'Archiving…' : 'Archive plan',
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

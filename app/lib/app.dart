@@ -171,9 +171,20 @@ GoRouter buildRouter(Ref ref, {required Listenable refreshListenable}) {
 /// shell is never re-created, re-keyed or mounted twice, so each branch's
 /// `Navigator` (and its `GlobalKey`) stays exactly one.
 ///
-/// No `PopScope` here: Android predictive back keeps the framework's
-/// previous-route preview, and the selected index stays clamped to
-/// [_tabCount] for the branch-only routes (`/profile`).
+/// **Sheets are root-navigator routes** (`core/widgets/app_sheet.dart`):
+/// `showAppSheet` always opens its sheet with `useRootNavigator: true`, so the
+/// sheet sits above this shell's `Scaffold` — the app-wide scrim covers the
+/// `NavigationBar` and any FAB (nothing underneath a sheet can open a second
+/// one), and the root navigator is the one that answers back. This matters
+/// *because* the branch navigators live inside `Scaffold.body`: a sheet pushed
+/// onto one of those renders inside the tab, clipped, with a barrier that stops
+/// at the bar, and back is routed through the shell instead of the app's
+/// top-most route.
+///
+/// No `PopScope` here, deliberately: nothing in the shell may intercept a pop,
+/// or it would swallow the sheet's own back-to-dismiss. Android predictive back
+/// keeps the framework's previous-route preview, and the selected index stays
+/// clamped to [_tabCount] for the branch-only routes (`/profile`).
 class _TabShell extends StatelessWidget {
   const _TabShell({required this.shell});
 

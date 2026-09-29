@@ -1,42 +1,58 @@
-/// One inquiry row: name/phone/note + status badge, icon-only Call/WhatsApp,
-/// and one labelled advance action.
+/// One inquiry row: name + status badge, phone and age, the note, and
+/// icon-only Call/WhatsApp quick actions.
 ///
-/// Advance: new -> "Mark contacted"; contacted -> "Convert to member";
-/// lost/joined show a static badge plus "Mark lost" for open inquiries.
+/// The card is a doorway, not an action: a tap opens [showLeadActionsSheet],
+/// where the status moves (`Mark contacted`, `Convert to member`, `Mark lost`)
+/// sit next to Call/WhatsApp, so a tap can no longer be mistaken for one of
+/// them. The two quick actions stay on the row for the one-tap case.
 ///
-/// Motion: the surface is a [PressableCard] (press response + the row's one
-/// haptic), the status badge transitions in place instead of swapping, and the
-/// converged (joined) state draws an [AnimatedCheck].
+/// Motion: the surface is a [PressableCard] (press response only — the sheet
+/// fires the arrival haptic), the status badge transitions in place instead of
+/// swapping, and the converged (joined) state draws an [AnimatedCheck].
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart';
 
+import '../../../core/contact/contact_launcher.dart';
 import '../../../core/motion/motion.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_tokens.dart';
-import '../application/leads_providers.dart';
 import '../data/inquiry.dart';
+import 'lead_actions_sheet.dart';
 
-class InquiryCard extends ConsumerWidget {
-  const InquiryCard({super.key, required this.inquiry, required this.onConvert});
+/// `12 Mar` — the absolute fallback once a lead is no longer recent.
+final _dayMonth = DateFormat('d MMM');
+
+/// Past this many days the added line names the date instead of counting days
+/// (`docs/voice.md` rule 4) — the same window the dues lines use.
+const int _relativeDays = 14;
+
+/// `Added today` / `Added yesterday` / `Added 3 days ago` while the lead is
+/// close, `Added 12 Mar` once it is not.
+String _addedLine(DateTime createdAt, DateTime today) {
+  final day = DateTime(today.year, today.month, today.day);
+  final added = DateTime(createdAt.year, createdAt.month, createdAt.day);
+  final days = day.difference(added).inDays;
+  if (days <= 0) return 'Added today';
+  if (days == 1) return 'Added yesterday';
+  return days <= _relativeDays
+      ? 'Added $days days ago'
+      : 'Added ${_dayMonth.format(added)}';
+}
+
+class InquiryCard extends StatelessWidget {
+  const InquiryCard({super.key, required this.inquiry});
 
   final Inquiry inquiry;
-  final VoidCallback onConvert;
-
-  bool get _open =>
-      inquiry.status == InquiryStatus.fresh ||
-      inquiry.status == InquiryStatus.contacted;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final open = _open;
+  Widget build(BuildContext context) {
+    final note = inquiry.note;
     return PressableCard(
-      // An open lead's row press is its primary move (the same action the
-      // button offers); the haptic is fired by the action itself, so this
-      // surface only supplies the press response.
-      onTap: open ? () => _advance(context, ref) : null,
+      // The tap opens the action sheet, whose arrival haptic is this gesture's
+      // one haptic — so this surface only supplies the press response.
+      onTap: () => showLeadActionsSheet(context, inquiry),
       enableHaptic: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -48,125 +64,46 @@ class InquiryCard extends ConsumerWidget {
                     style:
                         AppType.subtitle.copyWith(color: context.palette.text)),
               ),
+              const SizedBox(width: AppSpace.sm),
               _StatusBadge(status: inquiry.status),
+              const SizedBox(width: AppSpace.xs),
+              // Reads as tappable: the row is the way to every action.
+              Icon(Icons.chevron_right,
+                  size: 20, color: context.palette.secondary),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(inquiry.phone,
-              style: AppType.caption
-                  .copyWith(color: context.palette.secondary)),
-          if (inquiry.note != null && inquiry.note!.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(inquiry.note!,
+          const SizedBox(height: AppSpace.xs),
+          Text(
+            '${inquiry.phone} · '
+            '${_addedLine(inquiry.createdAt, DateTime.now())}',
+            style: AppType.caption.copyWith(color: context.palette.secondary),
+          ),
+          if (note != null && note.isNotEmpty) ...[
+            const SizedBox(height: AppSpace.xs),
+            Text(note,
                 style: AppType.body.copyWith(color: context.palette.text),
-                maxLines: 2, overflow: TextOverflow.ellipsis),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
           ],
           const SizedBox(height: AppSpace.sm),
           Row(
             children: [
               _IconAction(
                 icon: Icons.call,
-                label: 'Call ${inquiry.phone}',
-                onTap: () => _call(inquiry.phone),
+                label: 'Call ${inquiry.name}',
+                onTap: () => ContactLauncher.call(context, inquiry.phone),
               ),
               const SizedBox(width: AppSpace.sm),
               _IconAction(
                 icon: Icons.chat,
                 label: 'Message on WhatsApp',
-                onTap: () => _whatsapp(inquiry.phone),
-              ),
-              // The one labelled action takes whatever is left and ellipsizes;
-              // no fixed Spacer, so nothing can push the row past the card edge.
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: open
-                      ? TapScale(
-                          child: TextButton(
-                            style: TextButton.styleFrom(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 8),
-                            ),
-                            onPressed: () => _advance(context, ref),
-                            child: Text(
-                              inquiry.status.advanceLabel!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              softWrap: false,
-                            ),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
+                onTap: () =>
+                    ContactLauncher.openWhatsApp(context, inquiry.phone),
               ),
             ],
           ),
-          if (open)
-            Align(
-              alignment: Alignment.centerRight,
-              child: TapScale(
-                child: TextButton(
-                  onPressed: () => _markLost(context, ref),
-                  child: Text('Mark lost',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: false,
-                      style: TextStyle(color: context.palette.secondary)),
-                ),
-              ),
-            ),
         ],
       ),
     );
-  }
-
-  Future<void> _advance(BuildContext context, WidgetRef ref) async {
-    if (inquiry.status == InquiryStatus.contacted) {
-      // The convert sheet fires its own arrival haptic.
-      onConvert();
-      return;
-    }
-    Haptics.select();
-    final ok = await ref
-        .read(leadsControllerProvider.notifier)
-        .setStatus(inquiry, InquiryStatus.contacted);
-    if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              "Couldn't mark this contacted. Check your connection, then try again."),
-        ),
-      );
-    }
-  }
-
-  Future<void> _markLost(BuildContext context, WidgetRef ref) async {
-    Haptics.select();
-    final ok = await ref
-        .read(leadsControllerProvider.notifier)
-        .setStatus(inquiry, InquiryStatus.lost);
-    if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              "Couldn't mark this lost. Check your connection, then try again."),
-        ),
-      );
-    }
-  }
-
-  Future<void> _call(String phone) async {
-    Haptics.impact();
-    final uri = Uri(scheme: 'tel', path: phone);
-    if (await canLaunchUrl(uri)) await launchUrl(uri);
-  }
-
-  Future<void> _whatsapp(String phone) async {
-    Haptics.impact();
-    final uri = Uri.parse('https://wa.me/$phone');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
   }
 }
 
@@ -293,9 +230,9 @@ class _StatusBadgeState extends State<_StatusBadge>
   }
 }
 
-/// Icon-only circular action for a list row: a 44 pt target, one screen-reader
+/// Icon-only circular action for a list row: a 48 pt target, one screen-reader
 /// label, a tooltip for pointer platforms, press feedback from [TapScale] and
-/// the launch's haptic from the action itself.
+/// the launch's haptic from [ContactLauncher].
 class _IconAction extends StatelessWidget {
   const _IconAction({
     required this.icon,
@@ -320,11 +257,11 @@ class _IconAction extends StatelessWidget {
           message: label,
           excludeFromSemantics: true,
           child: SizedBox.square(
-            dimension: 44,
+            dimension: 48,
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
                 padding: EdgeInsets.zero,
-                minimumSize: const Size.square(44),
+                minimumSize: const Size.square(48),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 shape: const CircleBorder(),
                 foregroundColor: context.palette.accentText,

@@ -3,6 +3,8 @@
 /// Only third-party imports (`supabase_flutter`); no foundation imports yet.
 /// The current subscription is always the row with the latest `expiry_date`
 /// per member (ADR-0001); renewal appends a row and never updates history.
+/// A start-date correction ([correctStartDate]) is the one in-place UPDATE
+/// (ADR-0002) — a different operation, not a renewal.
 library;
 
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -36,6 +38,12 @@ class MembersRepository {
 
   /// Embed fragment joining the plan template for subscription rows.
   static const _planEmbed = 'plan:plans(name,amount,duration_days)';
+
+  /// `yyyy-MM-dd` — the wire format the `date` columns take.
+  static String _iso(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
 
   /// Search-first list scoped to one gym.
   ///
@@ -208,22 +216,62 @@ class MembersRepository {
     final days = (plan['duration_days'] as num).toInt();
     final start = DateTime(from.year, from.month, from.day);
     final expiry = start.add(Duration(days: days));
-    String iso(DateTime d) =>
-        '${d.year.toString().padLeft(4, '0')}-'
-        '${d.month.toString().padLeft(2, '0')}-'
-        '${d.day.toString().padLeft(2, '0')}';
     final row = await _client
         .from('memberships')
         .insert({
           'gym_id': gymId,
           'member_id': memberId,
           'plan_id': planId,
-          'start_date': iso(start),
-          'expiry_date': iso(expiry),
+          'start_date': _iso(start),
+          'expiry_date': _iso(expiry),
         })
         .select('id,gym_id,member_id,plan_id,start_date,expiry_date,$_planEmbed')
         .single();
     return Subscription.fromJson(row);
+  }
+
+  /// Correct the active subscription's dates in place (ADR-0002).
+  ///
+  /// **Not** a renewal: [renew] appends (ADR-0001), and a backdated append
+  /// would be shadowed by the earlier row (current = latest `expiry_date`), so
+  /// this rewrites the row identified by [membershipId]: `start_date` =
+  /// [startDate] (date part) and `expiry_date` = start + the row's plan
+  /// `duration_days`, in one UPDATE. Returns the updated subscription.
+  ///
+  /// Throws [StateError] when the row carries no plan (nothing to recompute
+  /// the period from); a failed read or write propagates the
+  /// [PostgrestException] unchanged.
+  Future<Subscription> correctStartDate({
+    required String membershipId,
+    required DateTime startDate,
+  }) async {
+    final row = await _client
+        .from('memberships')
+        .select('plan_id')
+        .eq('id', membershipId)
+        .single();
+    final planId = row['plan_id'] as String?;
+    if (planId == null) {
+      throw StateError('Subscription has no plan; nothing to recompute from.');
+    }
+    final plan = await _client
+        .from('plans')
+        .select('duration_days')
+        .eq('id', planId)
+        .single();
+    final days = (plan['duration_days'] as num).toInt();
+    final start = DateTime(startDate.year, startDate.month, startDate.day);
+    final expiry = start.add(Duration(days: days));
+    final updated = await _client
+        .from('memberships')
+        .update({
+          'start_date': _iso(start),
+          'expiry_date': _iso(expiry),
+        })
+        .eq('id', membershipId)
+        .select('id,gym_id,member_id,plan_id,start_date,expiry_date,$_planEmbed')
+        .single();
+    return Subscription.fromJson(updated);
   }
 
   /// Latest-expiry subscription per member id (single batched query).
