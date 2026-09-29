@@ -18,6 +18,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/motion/motion.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/app_sheet.dart';
 import '../../gyms/data/selected_gym.dart';
 import '../../gyms/providers/gyms_providers.dart' show gymsListProvider;
 import '../../gyms/widgets/gym_switcher.dart';
@@ -45,9 +46,8 @@ class HomeScreen extends ConsumerWidget {
   void _openAddMember(BuildContext context, String gymId) {
     // A modal surface is arriving: one press, one haptic.
     Haptics.sheet();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
+    showAppSheet<void>(
+      context,
       builder: (_) => MemberFormSheet(gymId: gymId),
     );
   }

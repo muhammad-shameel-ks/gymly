@@ -1,6 +1,11 @@
-/// Leads tab: status filter chips + grouped inquiry list.
+/// Leads tab: search + status filter chips + inquiry list.
 ///
-/// List states: skeleton while loading, guided empty, error + retry.
+/// The search field filters the already status-filtered list locally (name, or
+/// phone digits), so a keystroke never re-queries: the skeleton and the list's
+/// scroll position survive typing. The status counts stay whole-gym.
+///
+/// List states: skeleton while loading, guided empty (nothing yet, nothing for
+/// this status, nothing matching the search), error + retry.
 /// Motion: chips press (TapScale) + select haptic, counts count up, one
 /// staggered entrance per visit, skeletons stream.
 library;
@@ -11,19 +16,51 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/motion/motion.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/app_search_bar.dart';
 import '../../../core/widgets/scrollable_state_body.dart';
 import '../../gyms/widgets/gym_switcher.dart';
 import '../application/leads_providers.dart';
 import '../data/inquiry.dart';
-import 'convert_sheet.dart';
 import 'inquiry_card.dart';
 import 'quick_add_sheet.dart';
 
-class LeadsScreen extends ConsumerWidget {
+/// Case-insensitive name match, or a digits-only phone match: `98 123` finds
+/// `+91 98123 45678`.
+List<Inquiry> _matching(List<Inquiry> inquiries, String query) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return inquiries;
+  final digits = q.replaceAll(RegExp(r'\D'), '');
+  return [
+    for (final inquiry in inquiries)
+      if (inquiry.name.toLowerCase().contains(q) ||
+          (digits.isNotEmpty &&
+              inquiry.phone.replaceAll(RegExp(r'\D'), '').contains(digits)))
+        inquiry,
+  ];
+}
+
+class LeadsScreen extends ConsumerStatefulWidget {
   const LeadsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LeadsScreen> createState() => _LeadsScreenState();
+}
+
+class _LeadsScreenState extends ConsumerState<LeadsScreen> {
+  final _search = TextEditingController();
+
+  /// Search text, held here (never in a provider keyed by it) so typing
+  /// rebuilds the list body only and cannot restart the fetch.
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final gymId = ref.watch(selectedGymIdProvider);
     final inquiries = ref.watch(filteredInquiriesProvider);
     final async = ref.watch(inquiriesProvider);
@@ -88,6 +125,11 @@ class LeadsScreen extends ConsumerWidget {
                       ref.read(leadFilterProvider.notifier).state = s,
                 ),
                 const SizedBox(height: AppSpace.sm),
+                AppSearchBar(
+                  controller: _search,
+                  onChanged: (v) => setState(() => _query = v),
+                ),
+                const SizedBox(height: AppSpace.md),
                 Expanded(
                   child: async.when(
                     skipLoadingOnReload: true,
@@ -97,13 +139,20 @@ class LeadsScreen extends ConsumerWidget {
                       onRetry: () => ref.invalidate(inquiriesProvider),
                     ),
                     data: (_) {
-                      if (inquiries.isEmpty) {
+                      final visible = _matching(inquiries, _query);
+                      if (visible.isEmpty) {
                         return _LeadsEmpty(
+                          query: _query,
                           filtered: filter != null,
                           onAdd: () => showQuickAddSheet(context),
-                          onClear: () {
+                          onClearFilter: () {
                             Haptics.select();
                             ref.read(leadFilterProvider.notifier).state = null;
+                          },
+                          onClearSearch: () {
+                            Haptics.select();
+                            _search.clear();
+                            setState(() => _query = '');
                           },
                         );
                       }
@@ -112,19 +161,15 @@ class LeadsScreen extends ConsumerWidget {
                             ref.invalidate(inquiriesProvider),
                         child: ListView.separated(
                           padding: const EdgeInsets.only(bottom: 96),
-                          itemCount: inquiries.length,
+                          itemCount: visible.length,
                           separatorBuilder: (_, _) =>
                               const SizedBox(height: AppSpace.sm),
                           itemBuilder: (context, i) {
-                            final inquiry = inquiries[i];
+                            final inquiry = visible[i];
                             return StaggeredEntrance(
                               key: ValueKey(inquiry.id),
                               index: i,
-                              child: InquiryCard(
-                                inquiry: inquiry,
-                                onConvert: () =>
-                                    showConvertSheet(context, inquiry),
-                              ),
+                              child: InquiryCard(inquiry: inquiry),
                             );
                           },
                         ),
@@ -293,41 +338,69 @@ class _LeadsSkeleton extends StatelessWidget {
 
 class _LeadsEmpty extends StatelessWidget {
   const _LeadsEmpty({
+    required this.query,
     required this.filtered,
     required this.onAdd,
-    required this.onClear,
+    required this.onClearFilter,
+    required this.onClearSearch,
   });
 
+  /// The live search text; non-empty makes the state "nothing matched".
+  final String query;
+
+  /// Whether a status chip is narrowing the list.
   final bool filtered;
+
   final VoidCallback onAdd;
-  final VoidCallback onClear;
+  final VoidCallback onClearFilter;
+  final VoidCallback onClearSearch;
 
   @override
   Widget build(BuildContext context) {
+    final String title;
+    final String body;
+    final String action;
+    final VoidCallback onPressed;
+    // Search first: it is the narrowest narrowing, and the one just touched.
+    if (query.trim().isNotEmpty) {
+      title = 'No leads match "${query.trim()}"';
+      body = 'Clear the search to see every lead.';
+      action = 'Clear search';
+      onPressed = onClearSearch;
+    } else if (filtered) {
+      title = 'No leads with this status.';
+      body = 'Clear the filter to see every lead.';
+      action = 'Show all leads';
+      onPressed = onClearFilter;
+    } else {
+      title = 'No leads yet.';
+      body = 'Add a walk-in with just a name and phone.';
+      action = 'Add lead';
+      onPressed = onAdd;
+    }
+
     return ScrollableStateBody(
       child: RiseIn(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              filtered ? 'No leads with this status.' : 'No leads yet.',
+              title,
               style: AppType.subtitle.copyWith(color: context.palette.text),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: AppSpace.sm),
             Text(
-              filtered
-                  ? 'Clear the filter to see every lead.'
-                  : 'Add a walk-in with just a name and phone.',
+              body,
               style: AppType.caption.copyWith(color: context.palette.secondary),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: AppSpace.md),
             TapScale(
-              // Press feedback; clearing the filter fires its own select haptic.
+              // Press feedback; the control fires its own select haptic.
               child: FilledButton(
-                onPressed: filtered ? onClear : onAdd,
-                child: Text(filtered ? 'Show all leads' : 'Add lead'),
+                onPressed: onPressed,
+                child: Text(action),
               ),
             ),
           ],

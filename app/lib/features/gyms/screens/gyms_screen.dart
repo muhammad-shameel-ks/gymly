@@ -17,6 +17,10 @@ import '../providers/gyms_providers.dart';
 /// dialog arrival fires [Haptics.sheet] (a modal surface came up), a refused
 /// delete fires [Haptics.error]. Colours come from [AppPalette]; every mutation
 /// invalidates [gymsListProvider] so the list and switcher refetch.
+///
+/// Selection: a created gym becomes the selection (the Owner works in what they
+/// just made), and deleting the selected gym falls back to All gyms when the
+/// list refetches (see [SelectedGymIdNotifier.validateAgainst]).
 class GymsScreen extends ConsumerWidget {
   const GymsScreen({super.key});
 
@@ -69,7 +73,11 @@ class GymsScreen extends ConsumerWidget {
     final repo = ref.read(gymsRepositoryProvider);
     if (repo == null) return;
     if (existing == null) {
-      await repo.createGym(submitted);
+      final created = await repo.createGym(submitted);
+      // The gym the Owner just made is the one they mean to work in, so it
+      // becomes the selection — through the same persisted mutation path the
+      // switcher uses.
+      await ref.read(selectedGymIdProvider.notifier).setGym(created.id);
     } else {
       await repo.renameGym(id: existing.id, name: submitted);
     }
@@ -145,6 +153,8 @@ class GymsScreen extends ConsumerWidget {
             onPressed: () {
               // A heavy commitment: the session ends here, no confirm step.
               Haptics.impact(strength: HapticStrength.heavy);
+              // The selection belongs to the session that is ending.
+              ref.read(selectedGymIdProvider.notifier).setGym(null);
               ref.read(authRepositoryProvider).signOut();
             },
             icon: const Icon(Icons.logout),

@@ -1,12 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
+<!-- Launch surface for API 21 and later: the theme's android:colorBackground,
+     which values/styles.xml and values-night/styles.xml set to the brand surface
+     the Flutter launch splash paints (AppPalette surface, #FFFFFF in light,
+     #14161C in dark). Resolving the colour through the theme keeps the starting
+     window, the Android 12 system splash and the Flutter splash one colour, in
+     both UI modes, with no bitmap asset. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="?android:colorBackground" />
-
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
 </layer-list>

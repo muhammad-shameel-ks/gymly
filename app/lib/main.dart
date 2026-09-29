@@ -12,6 +12,12 @@
 ///
 /// [SharedPreferences] is loaded before `runApp` and injected, so the
 /// persisted [ThemeMode] is known on the first frame (no theme flash).
+///
+/// Launch brand: `SplashGate` sits in `MaterialApp.router`'s `builder`, so the
+/// native launch surface (Android `colorBackground` / the iOS launch screen
+/// background, both set to the brand surface colour) hands over to the Flutter
+/// splash without a white flash, and the splash fades out over the app's first
+/// frame instead of delaying it.
 library;
 
 import 'package:flutter/material.dart';
@@ -24,6 +30,7 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/theme_mode.dart';
 import 'features/gyms/data/selected_gym.dart' as gyms;
 import 'features/leads/application/leads_providers.dart' as leads;
+import 'features/splash/splash_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,6 +62,12 @@ class GymlyApp extends ConsumerWidget {
       darkTheme: AppTheme.dark,
       themeMode: ref.watch(themeModeProvider),
       routerConfig: router,
+      // Branded launch surface, above the router and inside `Theme`
+      // (see `features/splash/`). `child` is the router's Navigator, which is
+      // already painted on the first frame — the splash only fades over it, so
+      // it adds nothing to time-to-first-frame.
+      builder: (context, child) =>
+          SplashGate(child: child ?? const SizedBox.shrink()),
     );
   }
 }

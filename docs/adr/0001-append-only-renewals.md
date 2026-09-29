@@ -25,3 +25,4 @@ Append-only (option 2). Renewal inserts a new row with `start_date` = old expiry
 
 - App code must always resolve "current subscription" as latest expiry per member, never assume one row.
 - Future revenue reports can aggregate over subscription rows without a separate ledger.
+- A start-date **correction** is the one operation that updates a row instead of appending — see ADR-0002.

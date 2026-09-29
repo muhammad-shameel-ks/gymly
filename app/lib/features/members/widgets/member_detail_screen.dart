@@ -1,22 +1,27 @@
 /// Member detail: current subscription + full history (desc) + Renew.
 ///
 /// Renew appends a subscription row (ADR-0001) — history rows are never
-/// updated. Renew/Call/WhatsApp actions sit in the thumb zone. The header
-/// carries the signature [DueRing] around the member's initials, the current
-/// subscription signals its own state change, and the history staggers in
-/// once per visit.
+/// updated by it. The one edit to a row is a start-date correction (ADR-0002),
+/// offered from the current subscription card. Renew/Call/WhatsApp actions sit
+/// in the thumb zone, and reaching the member goes through [ContactLauncher] so
+/// every contact action in the app behaves the same. The header carries the
+/// signature [DueRing] around the member's initials, the current subscription
+/// signals its own state change, and the history staggers in once per visit.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/contact/contact_launcher.dart';
 import '../../../core/motion/motion.dart';
 import '../../../core/signature/signature.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/app_sheet.dart';
 import '../models/member.dart';
 import '../providers/members_providers.dart';
+import 'adjust_start_sheet.dart';
 import 'due_cue.dart';
 import 'member_form_sheet.dart';
 import 'member_states.dart';
@@ -59,25 +64,10 @@ class MemberDetailScreen extends ConsumerWidget {
     return 'Due in $days days';
   }
 
-  Future<void> _call(String phone) async {
-    Haptics.impact();
-    final uri = Uri(scheme: 'tel', path: phone);
-    if (await canLaunchUrl(uri)) await launchUrl(uri);
-  }
-
-  Future<void> _whatsapp(String phone) async {
-    Haptics.impact();
-    final uri = Uri.parse('https://wa.me/${phone.replaceAll(RegExp(r'\D'), '')}');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
-
   void _openRenew(BuildContext context, MemberWithDues d) {
     Haptics.sheet();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
+    showAppSheet<void>(
+      context,
       builder: (_) => RenewSheet(
         gymId: gymId,
         memberId: memberId,
@@ -88,10 +78,27 @@ class MemberDetailScreen extends ConsumerWidget {
 
   void _openEdit(BuildContext context, MemberWithDues d) {
     Haptics.sheet();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
+    showAppSheet<void>(
+      context,
       builder: (_) => MemberFormSheet(gymId: gymId, existing: d.member),
+    );
+  }
+
+  /// Correction entry point (ADR-0002). Only reachable for a subscription that
+  /// carries a plan, since the period is recomputed from its `duration_days`.
+  void _openAdjust(BuildContext context, Subscription sub) {
+    final days = sub.planDurationDays;
+    if (sub.planId == null || days == null) return;
+    Haptics.sheet();
+    showAppSheet<void>(
+      context,
+      builder: (_) => AdjustStartSheet(
+        gymId: gymId,
+        memberId: sub.memberId,
+        membershipId: sub.id,
+        currentStart: sub.startDate,
+        durationDays: days,
+      ),
     );
   }
 
@@ -197,6 +204,10 @@ class MemberDetailScreen extends ConsumerWidget {
                           sub: c,
                           current: true,
                           fmt: _fmt,
+                          onAdjustStart:
+                              c.planId != null && c.planDurationDays != null
+                                  ? () => _openAdjust(context, c)
+                                  : null,
                         ),
                 ),
                 const SizedBox(height: 24),
@@ -261,8 +272,11 @@ class MemberDetailScreen extends ConsumerWidget {
                   width: 48,
                   height: 48,
                   child: TapScale(
+                    // The launcher fires the tap haptic itself.
+                    enableHaptic: false,
                     child: OutlinedButton(
-                      onPressed: () => _call(d.member.phone),
+                      onPressed: () =>
+                          ContactLauncher.call(context, d.member.phone),
                       style: OutlinedButton.styleFrom(padding: EdgeInsets.zero),
                       child: const Icon(Icons.call),
                     ),
@@ -273,8 +287,11 @@ class MemberDetailScreen extends ConsumerWidget {
                   width: 48,
                   height: 48,
                   child: TapScale(
+                    // The launcher fires the tap haptic itself.
+                    enableHaptic: false,
                     child: OutlinedButton(
-                      onPressed: () => _whatsapp(d.member.phone),
+                      onPressed: () =>
+                          ContactLauncher.openWhatsApp(context, d.member.phone),
                       style: OutlinedButton.styleFrom(padding: EdgeInsets.zero),
                       child: const Icon(Icons.chat),
                     ),
@@ -315,11 +332,17 @@ class _SubscriptionCard extends StatelessWidget {
     required this.sub,
     required this.current,
     required this.fmt,
+    this.onAdjustStart,
   });
 
   final Subscription sub;
   final bool current;
   final String Function(DateTime) fmt;
+
+  /// Start-date correction (ADR-0002) for the active subscription. Null — for
+  /// history rows, and for the active row when its plan is missing (no period
+  /// length to recompute the due date from) — hides the control.
+  final VoidCallback? onAdjustStart;
 
   @override
   Widget build(BuildContext context) {
@@ -341,62 +364,89 @@ class _SubscriptionCard extends StatelessWidget {
           color: current ? status : palette.border,
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Springs once when the bucket changes — i.e. when a renewal lands.
-          AnimatedStatusDot(color: status, statusKey: bucket),
-          const SizedBox(width: 2),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          Row(
+            children: [
+              // Springs once when the bucket changes — i.e. when a renewal lands.
+              AnimatedStatusDot(color: status, statusKey: bucket),
+              const SizedBox(width: 2),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      sub.planName ?? 'Subscription',
+                      style: TextStyle(
+                        color: palette.text,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      '${fmt(sub.startDate)} → ${fmt(sub.expiryDate)}',
+                      style: caption,
+                    ),
+                    if (amount != null)
+                      Row(
+                        children: [
+                          AnimatedAmount(
+                            amount: amount.toDouble(),
+                            initialAmount: amount.toDouble(),
+                            animate: current,
+                            formatter: (v) => _amountLabel(amount, v),
+                            style: caption,
+                          ),
+                          if (term != null)
+                            Expanded(
+                              child: Text(
+                                ' · $term',
+                                style: caption,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                      )
+                    else if (term != null)
+                      Text(term, style: caption),
+                  ],
+                ),
+              ),
+              if (current)
                 Text(
-                  sub.planName ?? 'Subscription',
+                  bucket.label,
                   style: TextStyle(
-                    color: palette.text,
-                    fontSize: 16,
+                    color: status,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                Text(
-                  '${fmt(sub.startDate)} → ${fmt(sub.expiryDate)}',
-                  style: caption,
-                ),
-                if (amount != null)
-                  Row(
-                    children: [
-                      AnimatedAmount(
-                        amount: amount.toDouble(),
-                        initialAmount: amount.toDouble(),
-                        animate: current,
-                        formatter: (v) => _amountLabel(amount, v),
-                        style: caption,
-                      ),
-                      if (term != null)
-                        Expanded(
-                          child: Text(
-                            ' · $term',
-                            style: caption,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                    ],
-                  )
-                else if (term != null)
-                  Text(term, style: caption),
-              ],
-            ),
+            ],
           ),
-          if (current)
-            Text(
-              bucket.label,
-              style: TextStyle(
-                color: status,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+          if (onAdjustStart != null) ...[
+            const SizedBox(height: AppSpace.sm),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TapScale(
+                // The correction sheet fires Haptics.sheet() when it arrives.
+                enableHaptic: false,
+                child: TextButton.icon(
+                  onPressed: onAdjustStart,
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 48),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpace.sm,
+                    ),
+                    foregroundColor: palette.accentText,
+                  ),
+                  icon: const Icon(Icons.edit_calendar, size: 18),
+                  label: const Text('Adjust start date'),
+                ),
               ),
             ),
+          ],
         ],
       ),
     );

@@ -99,6 +99,42 @@ AppType carries NO colour — always .copyWith(color: context.palette.…)
 - **No realtime**: `public` is not in the `supabase_realtime` publication. Reads are
   futures (`select()`), refreshed with `ref.invalidate` after writes.
 
+### Sheets (one chrome)
+
+Every bottom sheet goes through `showAppSheet` + `AppSheet`
+(`lib/core/widgets/app_sheet.dart`). No screen calls `showModalBottomSheet`
+directly: the route flags below are the fix for a class of bugs, so they live in
+one place.
+
+- **Root navigator, always** (`useRootNavigator: true`). Tab bodies live in
+  `Scaffold.body` behind a branch `Navigator`, so a sheet pushed there renders
+  inside the tab: it is clipped to the body and its scrim stops at the
+  `NavigationBar`/FAB, which stay tappable while the sheet is open. On the root
+  navigator the sheet is the app's top-most route: the scrim covers the whole
+  app (nothing underneath can open a second sheet) and back has one unambiguous
+  target.
+- **Dismissal — three ways, one pop**: barrier tap (`isDismissible`), drag down
+  (`enableDrag`), Android back / predictive back. Nothing in the shell registers
+  a `PopScope`, so a sheet is never trapped and no pop is intercepted.
+- **One grabber pill**, themed in `AppTheme.bottomSheetTheme`
+  (`dragHandleColor: border`, `dragHandleSize: 32×5`), centred with ≥8 dp clear
+  above the title. The framework reserves a full-width 48 dp strip above the
+  body: the title stays outside the scrollable so that strip remains a drag
+  target while the body scrolls.
+- **Keyboard + safe area, padded once**: `isScrollControlled: true`, and
+  `AppSheet` pads the bottom by `max(keyboard inset, safe area)`. A sheet never
+  adds its own `SafeArea`/inset padding (a sheet opened inside another sheet's
+  inset must not pad twice).
+- **One surface, one radius, one inset**: `surface`, the `AppRadius.sheet` top
+  corners, `AppSpace.screen` horizontal padding and the title
+  (`AppType.subtitle`) come from `AppSheet`; the scrim is palette-derived (`bg`
+  in dark, `secondary` in light), never the framework's default black. A sheet
+  adds fields, states, copy and its CTA — not chrome.
+- **Reduce Motion**: a sheet that needs custom timing passes
+  `AppTransitions.sheetController(vsync, reduceMotion: …)`, which collapses to
+  the 160 ms cross-fade budget instead of 425/240 ms travel. `Haptics.sheet()`
+  still fires — haptics are not motion.
+
 ## 5. Motion + haptics (spec tokens)
 
 Implementation lives behind **`lib/core/motion/`** — read `core/motion/PROTOCOL.md` before touching

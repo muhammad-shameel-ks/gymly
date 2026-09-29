@@ -166,9 +166,10 @@ abstract final class AppTransitions {
 
   /// Controller for a modal sheet that must match the app's sheet budget.
   ///
-  /// Pass to `showModalBottomSheet(transitionAnimationController: …)`; the
-  /// caller owns it and must dispose it. Under Reduce Motion the duration
-  /// collapses to the cross-fade budget so the sheet arrives without travel.
+  /// Pass to `showAppSheet(transitionAnimationController: …)` (which forwards
+  /// it to `showModalBottomSheet`); the caller owns it and must dispose it.
+  /// Under Reduce Motion the duration collapses to the cross-fade budget so
+  /// the sheet arrives without travel.
   static AnimationController sheetController(
     TickerProvider vsync, {
     bool reduceMotion = false,

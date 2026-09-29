@@ -8,5 +8,6 @@ Canonical domain language. Use these terms exactly; avoid the listed synonyms.
 - **Member** — A paying person registered at a gym. Identity = phone number; one phone = one member per gym. Has a name and an optional note.
 - **Subscription** — One member on one plan for one period: start date → expiry date. Stored as a row in the `memberships` table. A member holds many subscriptions over time; the current one is the row with the latest expiry date.
 - **Renewal** — Appending a new subscription row when a member pays again. Never editing the old row. History is preserved.
+- **Start date correction** — Rewriting the active subscription's start and expiry dates in place when the member's real start date differs from the day the record was entered, so the due date was wrong. Not a renewal: a renewal appends, a correction edits the active row (ADR-0002).
 - **Due bucket** — Where a member sits on the Home triage: **Overdue** (expiry passed), **Due soon** (expiry within 7 days), **Active** (everything else).
 - **Inquiry** — A walk-in / call asking about the gym, not yet a member. Name + phone required, optional note. Statuses: `new`, `contacted`, `joined`, `lost`. Converting an inquiry creates a member (and usually a first subscription) and marks the inquiry `joined`.

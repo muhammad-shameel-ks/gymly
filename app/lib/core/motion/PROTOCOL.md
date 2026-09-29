@@ -82,10 +82,32 @@ Shimmer(child: Column(children: [ShimmerBox(width: 140), ShimmerBox(height: 48)]
 AnimatedCheck(selected: selected, color: p.onAccent);
 AnimatedStatusDot(color: bucketColor, statusKey: bucket);
 
-// Sheet: theme + haptic; own the timing only when you must.
-Haptics.sheet(); await showModalBottomSheet(context: context, builder: ...);
+// Sheet: shared chrome + one haptic; own the timing only when you must.
+// Never call showModalBottomSheet directly: showAppSheet pushes the sheet on the
+// ROOT navigator (scrim over the whole app, so nothing underneath can open a
+// second sheet) and the body is an AppSheet (surface, top radius, pill, keyboard
+// inset + safe area, title). Barrier tap, drag down and Android back all pop that
+// one route — so never wrap the shell in a PopScope.
+Haptics.sheet();
+await showAppSheet<void>(
+  context,
+  builder: (_) => AppSheet(title: 'New member', child: form),
+);
+
+// Sheet timing you own (the caller creates AND disposes it) still forwards here.
+final ctrl = AppTransitions.sheetController(
+  Navigator.of(context),
+  reduceMotion: AppMotionConfig.reduceMotionOf(context),
+);
+try {
+  await showAppSheet<void>(context, transitionAnimationController: ctrl, builder: …);
+} finally {
+  ctrl.dispose();
+}
 ```
 
 Custom routes use `AppTransitions.builder`; sheet timing uses
-`AppTransitions.sheetController(vsync, reduceMotion: …)`.
+`AppTransitions.sheetController(vsync, reduceMotion: …)` — never a hand-rolled
+duration, and never a second `SafeArea`/inset pad inside a sheet (`AppSheet`
+already accounts for the keyboard).
 `features/auth/widgets/auth_entrance.dart` declares its own public `StaggeredEntrance` — delete it when you adopt the core one.

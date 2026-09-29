@@ -145,9 +145,12 @@ class GymSwitcher extends ConsumerWidget {
                     _openManageGyms(context);
                     return;
                   }
-                  // Any other selectable row is a gym id, or `null` = All gyms.
-                  ref.read(selectedGymIdProvider.notifier).state =
-                      value as String?;
+                  // Any other selectable row is a gym id, or `null` = All
+                  // gyms. The notifier persists the pick and is the only
+                  // mutation path.
+                  ref
+                      .read(selectedGymIdProvider.notifier)
+                      .setGym(value as String?);
                 },
               ),
             ),

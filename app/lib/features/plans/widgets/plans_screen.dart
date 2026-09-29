@@ -2,8 +2,10 @@
 ///
 /// Requires a single [gymId]; a null gym shows [PlanPickGymPrompt] (other
 /// tabs filter to one gym — only Home aggregates "All gyms").
-/// Create/edit via [PlanFormSheet]; archive is guarded by
-/// [ReferencedPlanException] (see the form sheet's warning surface).
+/// A card tap opens [showPlanActionsSheet] (a doorway, so a mis-tap never lands
+/// in an editor); `Edit plan` there is the one route into [PlanFormSheet], and
+/// archive stays guarded by [ReferencedPlanException] (see the form sheet's
+/// warning surface).
 ///
 /// Motion (one entrance per visit, from `core/motion`): rows stagger in via
 /// [StaggeredEntrance] keyed by plan id — so a re-ordered or edited row keeps
@@ -23,8 +25,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/motion/motion.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/app_sheet.dart';
 import '../models/plan.dart';
 import '../providers/plans_providers.dart';
+import 'plan_actions_sheet.dart';
 import 'plan_form_sheet.dart';
 import 'plan_picker.dart';
 import 'plan_states.dart';
@@ -35,16 +39,13 @@ class PlansScreen extends ConsumerWidget {
   /// Null = "All gyms" selected → prompt to pick one gym.
   final String? gymId;
 
-  /// Opens the create/edit sheet. The haptic for this gesture is fired by the
-  /// control that was pressed (row, FAB or CTA) — one haptic per gesture
-  /// (`core/motion/PROTOCOL.md`), so the sheet itself arrives silently and the
-  /// theme supplies its surface colour and `AppRadius.sheet` top radius.
+  /// Opens the create/edit sheet through the shared chrome. The haptic for
+  /// this gesture is fired by the control that was pressed (row, FAB or CTA) —
+  /// one haptic per gesture (`core/motion/PROTOCOL.md`), so the sheet itself
+  /// arrives silently and `AppTheme` supplies its surface, `AppRadius.sheet`
+  /// top radius and grabber pill.
   void _openSheet(BuildContext context, Widget child) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => child,
-    );
+    showAppSheet<void>(context, builder: (_) => child);
   }
 
   void _openCreate(BuildContext context, String gymId) {
@@ -53,6 +54,21 @@ class PlansScreen extends ConsumerWidget {
 
   void _openEdit(BuildContext context, String gymId, Plan plan) {
     _openSheet(context, PlanFormSheet(gymId: gymId, existing: plan));
+  }
+
+  /// Card tap → the actions sheet, so a mis-tap never lands in the editor.
+  /// `Edit plan` inside it runs [_openEdit] with the card's own context (the
+  /// row outlives the sheet), which is the same entry point the card used to
+  /// call directly — the form and its guarded archive are untouched.
+  void _openActions(BuildContext context, String gymId, Plan plan) {
+    showPlanActionsSheet(
+      context,
+      plan: plan,
+      onEdit: () {
+        if (!context.mounted) return;
+        _openEdit(context, gymId, plan);
+      },
+    );
   }
 
   @override
@@ -108,7 +124,7 @@ class PlansScreen extends ConsumerWidget {
                 index: i,
                 child: _PlanRow(
                   plan: plan,
-                  onTap: () => _openEdit(context, gymId, plan),
+                  onTap: () => _openActions(context, gymId, plan),
                 ),
               );
             },
@@ -130,8 +146,9 @@ class _PlanRow extends StatelessWidget {
     final palette = context.palette;
     final amount = plan.amount.toDouble();
     // PressableCard = the row's press response (0.985 spring + 6% overlay) and
-    // its own light impact haptic; the row is the one action, so the card owns
-    // the gesture.
+    // its own light impact haptic; the row is the one action (it opens the
+    // actions sheet), so the card owns the gesture, and that impact is the
+    // gesture's one haptic — the sheet itself arrives silently.
     return PressableCard(
       onTap: onTap,
       child: Row(
@@ -161,6 +178,16 @@ class _PlanRow extends StatelessWidget {
           ),
           const SizedBox(width: AppSpace.gap),
           PlanDurationChip(durationDays: plan.durationDays),
+          // The doorway cue: a tap opens the actions sheet, not the editor, so
+          // the card has to read as "there is more behind this" — and the
+          // chevron sits outside the chip so the price/term grouping (voice
+          // rule 3) keeps its own edge.
+          const SizedBox(width: AppSpace.sm),
+          Icon(
+            Icons.chevron_right,
+            size: 20,
+            color: palette.secondary,
+          ),
         ],
       ),
     );
