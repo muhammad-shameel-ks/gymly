@@ -1,0 +1,219 @@
+/// Members tab: search-first list filtered by gym, with the signature due ring.
+///
+/// Requires a single [gymId]; a null gym shows [PickGymPrompt] (other tabs
+/// filter to one gym — only Home aggregates "All gyms").
+/// Tapping a row pushes [MemberDetailScreen]; rows stagger in once per visit.
+/// The last loaded rows stay on screen while the next query loads, so typing
+/// never flashes a skeleton and never replays that entrance.
+library;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+
+import '../../../core/motion/motion.dart';
+import '../../../core/theme/app_palette.dart';
+import '../models/member.dart';
+import '../providers/members_providers.dart';
+import 'due_cue.dart';
+import 'member_detail_screen.dart';
+import 'member_form_sheet.dart';
+import 'member_states.dart';
+
+final _dayMonth = DateFormat('d MMM');
+
+class MembersScreen extends ConsumerStatefulWidget {
+  const MembersScreen({super.key, required this.gymId});
+
+  /// Null = "All gyms" selected → prompt to pick one gym.
+  final String? gymId;
+
+  @override
+  ConsumerState<MembersScreen> createState() => _MembersScreenState();
+}
+
+class _MembersScreenState extends ConsumerState<MembersScreen> {
+  final _search = TextEditingController();
+  String _query = '';
+
+  /// Last non-empty result, kept while the next query loads.
+  List<MemberWithDues>? _rows;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _openCreate() {
+    final gymId = widget.gymId;
+    if (gymId == null) return;
+    Haptics.sheet();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => MemberFormSheet(gymId: gymId),
+    );
+  }
+
+  /// Plan + where the current subscription sits, in the voice's terms: money
+  /// and term when they decide the sentence, time relative while it is close,
+  /// the date once it is not.
+  String _dueLine(MemberWithDues e) {
+    final c = e.current;
+    if (c == null) return 'No subscription — renew to start';
+    final plan = c.planName ?? 'Subscription';
+    final days = c.daysToExpiry();
+    if (days < 0) {
+      final over = -days;
+      return over <= 30
+          ? '$plan · expired $over ${over == 1 ? 'day' : 'days'} ago'
+          : '$plan · expired ${_dayMonth.format(c.expiryDate)}';
+    }
+    if (days == 0) return '$plan · due today';
+    return days <= 14
+        ? '$plan · due in $days ${days == 1 ? 'day' : 'days'}'
+        : '$plan · due ${_dayMonth.format(c.expiryDate)}';
+  }
+
+  Widget _list(List<MemberWithDues> rows, String gymId) {
+    return ListView.separated(
+      itemCount: rows.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (_, i) {
+        final e = rows[i];
+        return StaggeredEntrance(
+          index: i,
+          child: _MemberRow(
+            entry: e,
+            subtitle: _dueLine(e),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => MemberDetailScreen(
+                  gymId: gymId,
+                  memberId: e.member.id,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gymId = widget.gymId;
+    if (gymId == null) return const PickGymPrompt();
+    final q = (gymId: gymId, query: _query);
+    final list = ref.watch(membersListProvider(q));
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            SearchBar(
+              controller: _search,
+              hintText: 'Search by name or phone',
+              onChanged: (v) => setState(() => _query = v),
+              leading: const Icon(Icons.search),
+              trailing: _query.isEmpty
+                  ? null
+                  : [
+                      TapScale(
+                        child: IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            Haptics.impact();
+                            _search.clear();
+                            setState(() => _query = '');
+                          },
+                        ),
+                      ),
+                    ],
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: list.when(
+                skipLoadingOnReload: true,
+                loading: () {
+                  final rows = _rows;
+                  return rows == null
+                      ? const MemberListSkeleton()
+                      : _list(rows, gymId);
+                },
+                error: (_, _) => MemberError(
+                  onRetry: () => ref.invalidate(membersListProvider(q)),
+                ),
+                data: (rows) {
+                  _rows = rows.isEmpty ? null : rows;
+                  if (rows.isEmpty) {
+                    return MemberEmpty(
+                      query: _query,
+                      onCreate: _openCreate,
+                    );
+                  }
+                  return _list(rows, gymId);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MemberRow extends StatelessWidget {
+  const _MemberRow({
+    required this.entry,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final MemberWithDues entry;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return PressableRow(
+      onTap: onTap,
+      padding: const EdgeInsets.all(12),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: Row(
+          children: [
+            MemberAvatar(entry: entry),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    entry.member.name,
+                    style: TextStyle(
+                      color: context.palette.text,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${entry.member.phone} · $subtitle',
+                    style: TextStyle(
+                      color: context.palette.secondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

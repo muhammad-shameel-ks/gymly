@@ -1,0 +1,34 @@
+# Dart / Flutter build output
+app/build/
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+app/pubspec.lock.bak
+
+# Android / iOS build + signing
+.gradle/
+**/android/.gradle/
+**/android/key.properties
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+*.jks
+*.keystore
+**/ios/Pods/
+**/ios/.symlinks/
+**/linux/flutter/ephemeral/
+**/macos/Flutter/ephemeral/
+**/windows/flutter/ephemeral/
+
+# IDE / OS
+.idea/
+*.iml
+*.swp
+.DS_Store
+.vscode/
+
+# Local agent + scratch state (machine-specific)
+.omp/
+.scratch/
+*.log
