@@ -77,6 +77,8 @@ jobs:
         # triggers no further run — which is why the tag is cut in the step
         # below rather than by a second workflow run. GitHub computes a fresh
         # PR's mergeability asynchronously, so the first attempt can race it.
+        # `-R` because this job holds no checkout: without it `gh` looks for a
+        # git directory to resolve the repo and fails.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ fromJSON(needs.release-please.outputs.pr).number }}
@@ -85,7 +87,7 @@ jobs:
           echo "release PR: #$PR"
           echo "action output: $PR_RAW"
           for attempt in 1 2 3 4 5; do
-            if gh pr merge "$PR" --squash --delete-branch; then
+            if gh pr merge "$PR" -R "$GITHUB_REPOSITORY" --squash --delete-branch; then
               exit 0
             fi
             echo "attempt $attempt: not mergeable yet, retrying"
