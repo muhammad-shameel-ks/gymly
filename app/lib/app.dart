@@ -181,9 +181,21 @@ GoRouter buildRouter(Ref ref, {required Listenable refreshListenable}) {
 /// at the bar, and back is routed through the shell instead of the app's
 /// top-most route.
 ///
-/// No `PopScope` here, deliberately: nothing in the shell may intercept a pop,
-/// or it would swallow the sheet's own back-to-dismiss. Android predictive back
-/// keeps the framework's previous-route preview, and the selected index stays
+/// **Back is the tab model's "up".** The shell is wrapped in one [PopScope]
+/// that claims the pop only while a destination other than Dues is selected:
+/// back from Members/Leads/Plans (or from a branch-only route) moves to Dues —
+/// the platform's rule for a secondary top-level destination — and only on Dues
+/// does the pop bubble out of the app. Claiming it, rather than letting it
+/// bubble, is also what tells Android the framework handles back
+/// (`SystemNavigator.setFrameworkHandlesBack`), so a secondary tab no longer
+/// hands the gesture to the system's back-to-home animation.
+///
+/// This `PopScope` sits on the **shell page** (the root navigator's route), not
+/// on a branch navigator, so it cannot swallow a sheet's or a pushed page's
+/// back: those are separate routes, and go_router walks the branch navigator —
+/// and the sheet, which the root navigator holds above the shell page — before
+/// the shell's route is ever asked. It only sees the pop that has nothing left
+/// above it, which is exactly the case it answers. The selected index stays
 /// clamped to [_tabCount] for the branch-only routes (`/profile`).
 class _TabShell extends StatelessWidget {
   const _TabShell({required this.shell});
@@ -219,41 +231,60 @@ class _TabShell extends StatelessWidget {
     shell.goBranch(index, initialLocation: true);
   }
 
+  /// Back on a destination that is not Dues: the same move as tapping the Dues
+  /// tab, except that it keeps Dues' own stack (`goBranch` without
+  /// `initialLocation` — a *press* on the active tab is what resets it).
+  void _backToDues() {
+    Haptics.select();
+    shell.goBranch(0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
     final index =
         shell.currentIndex < _tabCount ? shell.currentIndex : _tabCount - 1;
-    return Scaffold(
-      backgroundColor: p.bg,
-      // The body is transformed in place by [TabTransition] — the shell itself
-      // is never swapped or re-keyed, so branch navigators and tab state live.
-      body: TabTransition(index: shell.currentIndex, child: shell),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: NavigationBar(
-          backgroundColor: p.bg,
-          indicatorColor: Colors.transparent,
-          labelTextStyle: WidgetStateProperty.resolveWith(
-            (Set<WidgetState> states) {
-              final selected = states.contains(WidgetState.selected);
-              return AppType.caption.copyWith(
-                color: selected ? p.accentText : p.secondary,
-              );
-            },
-          ),
-          destinations: [
-            for (var i = 0; i < _tabCount; i++)
-              NavigationDestination(
-                icon: _TabIcon(
-                  selected: i == index,
-                  icon: i == index ? _selectedIcons[i] : _icons[i],
+    return PopScope(
+      // Claim the pop for every destination but the first (the branch-only
+      // `/profile` included): back never leaves the app from a secondary tab —
+      // it moves to Dues first. The class doc covers why this cannot swallow a
+      // sheet's or a pushed page's own back.
+      canPop: shell.currentIndex == 0,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        _backToDues();
+      },
+      child: Scaffold(
+        backgroundColor: p.bg,
+        // The body is transformed in place by [TabTransition] — the shell itself
+        // is never swapped or re-keyed, so branch navigators and tab state live.
+        body: TabTransition(index: shell.currentIndex, child: shell),
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: NavigationBar(
+            backgroundColor: p.bg,
+            indicatorColor: Colors.transparent,
+            labelTextStyle: WidgetStateProperty.resolveWith(
+              (Set<WidgetState> states) {
+                final selected = states.contains(WidgetState.selected);
+                return AppType.caption.copyWith(
+                  color: selected ? p.accentText : p.secondary,
+                );
+              },
+            ),
+            destinations: [
+              for (var i = 0; i < _tabCount; i++)
+                NavigationDestination(
+                  icon: _TabIcon(
+                    selected: i == index,
+                    icon: i == index ? _selectedIcons[i] : _icons[i],
+                  ),
+                  label: _labels[i],
                 ),
-                label: _labels[i],
-              ),
-          ],
-          selectedIndex: index,
-          onDestinationSelected: _go,
+            ],
+            selectedIndex: index,
+            onDestinationSelected: _go,
+          ),
         ),
       ),
     );

@@ -87,7 +87,9 @@ AnimatedStatusDot(color: bucketColor, statusKey: bucket);
 // ROOT navigator (scrim over the whole app, so nothing underneath can open a
 // second sheet) and the body is an AppSheet (surface, top radius, pill, keyboard
 // inset + safe area, title). Barrier tap, drag down and Android back all pop that
-// one route — so never wrap the shell in a PopScope.
+// one route: it is the top-most route of the root navigator, above the shell, so a
+// pop reaches it before the shell's own PopScope (which only answers a pop with
+// nothing left above it — it moves to the Dues tab).
 Haptics.sheet();
 await showAppSheet<void>(
   context,

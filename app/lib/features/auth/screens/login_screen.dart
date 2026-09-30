@@ -2,7 +2,9 @@
 ///
 /// Premium dark-first layout: [AuthHero] wordmark → themed fields with inline
 /// validation → accent pill CTA ([AuthPrimaryButton]) with an in-button progress
-/// state, error banner ([AuthErrorBanner]) and a `/signup` link. The three
+/// state, error banner ([AuthErrorBanner]) and a `/signup` link **pushed on top
+/// of this route**, so system back returns to login instead of leaving the app
+/// (login is the app's first route; back there is what leaves). The three
 /// sections stagger in once per visit through the motion layer's
 /// [StaggeredEntrance] (index 0/1/2, 250 ms each with a 40 ms stagger, latched
 /// per visit and cross-faded under Reduce Motion).
@@ -161,7 +163,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     onPressed: () {
                       // A control was pressed; navigation is the visible change.
                       Haptics.impact();
-                      context.go('/signup');
+                      // Pushed, not replaced: signup sits on top of login, so
+                      // system back returns here instead of leaving the app.
+                      context.push('/signup');
                     },
                     style: TextButton.styleFrom(
                       minimumSize: const Size.fromHeight(48),

@@ -90,6 +90,28 @@ Four bottom tabs: **Home (Dues) · Members · Leads · Plans**. ≤ 3 taps to an
   appearance, the installed version with **Check for update** — download and install the
   published APK (`docs/app-updates.md`) — and log out.
 
+### Back (the tab model's "up")
+
+System back is the platform's up, in one order — top-most surface first, then the
+tab, then out of the app:
+
+1. whatever is on top of the app pops: a sheet or dialog (root navigator), then a page
+   pushed into the tab you are on (`/gyms`, a member detail, `/profile`);
+2. on a tab with nothing left to pop, back moves to **Dues** — a secondary top-level
+   destination never closes the app (the platform's rule for bottom navigation). Each tab
+   keeps its own stack, so this reveals Dues as you left it, not a reset;
+3. only on Dues with nothing open does back leave the app.
+
+Before sign-in the same rule holds on the two public routes: `/signup` is *pushed* on top
+of `/login`, so back returns to login, and login is the app's first route, so back there
+leaves the app.
+
+One widget owns rule 2 — the shell's `PopScope` (`lib/app.dart`), which claims the pop
+only while a destination other than Dues is selected. Claiming it also tells Android the
+framework handles back, so a secondary tab never hands the gesture to the system's
+back-to-home animation. Sheets and pushed pages are separate routes and are answered
+before the shell ever sees the pop (see "Sheets", §4).
+
 ## 4. Visual system (per attached Mobile UI/UX Rules spec)
 
 Dark-first premium. One accent, ~90% neutral surfaces; hierarchy via size/weight/position.
@@ -165,8 +187,12 @@ one place.
   app (nothing underneath can open a second sheet) and back has one unambiguous
   target.
 - **Dismissal — three ways, one pop**: barrier tap (`isDismissible`), drag down
-  (`enableDrag`), Android back / predictive back. Nothing in the shell registers
-  a `PopScope`, so a sheet is never trapped and no pop is intercepted.
+  (`enableDrag`), Android back / predictive back. The one `PopScope` in the
+  shell ships on the **shell page** (root navigator) and answers only the pop
+  that has nothing left above it — it can never trap a sheet or a pushed page,
+  which are separate routes: go_router walks the tab's branch navigator (and a
+  root-navigator sheet, which sits above the shell page) before the shell, so
+  the top-most surface always gets back first.
 - **One grabber pill**, themed in `AppTheme.bottomSheetTheme`
   (`dragHandleColor: border`, `dragHandleSize: 32×5`), centred with ≥8 dp clear
   above the title. The framework reserves a full-width 48 dp strip above the
