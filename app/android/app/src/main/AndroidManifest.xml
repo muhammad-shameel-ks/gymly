@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The app is online-only: every screen reads and writes Supabase. The
+         debug/profile manifests declare this for the Flutter tool (hot reload,
+         breakpoints); release builds do NOT inherit those, so without this line
+         a release APK/AAB has no network at all. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="gymly"
         android:name="${applicationName}"
