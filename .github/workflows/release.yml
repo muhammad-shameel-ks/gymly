@@ -85,7 +85,10 @@ jobs:
           channel: stable
           cache: true
       - name: Resolve the release tag
-        run: echo "TAG=$(git describe --tags --exact-match)" >> "$GITHUB_ENV"
+        # From the trigger itself: the dispatch input, the tag release-please
+        # just cut, or the tag that was pushed. No `git describe`, so the
+        # checkout depth cannot make this fail.
+        run: echo "TAG=${{ github.event.inputs.tag || needs.release-please.outputs.tag || github.ref_name }}" >> "$GITHUB_ENV"
       - name: Write the signing config
         if: env.KEYSTORE_B64 != ''
         run: |
