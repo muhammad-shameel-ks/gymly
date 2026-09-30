@@ -19,6 +19,13 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 3
+    # One PR per month, not three: the bumps interact (AGP 9.4 refuses to build
+    # on a wrapper older than 9.6), so splitting them means the AGP PR is red
+    # until the wrapper PR lands. Majors stay separate.
+    groups:
+      gradle-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
 
   # The workflow actions themselves, which is how the action majors here stay
   # honest instead of rotting.
