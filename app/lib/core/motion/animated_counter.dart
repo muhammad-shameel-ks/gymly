@@ -1,7 +1,7 @@
 /// `AnimatedCounter` / `AnimatedAmount` — numbers that settle, not spin.
 ///
 /// **Communicates:** "this value changed" — a count-up rolls from the previous
-/// value to the new one instead of swapping, so a renewal or a refreshed feed is
+/// value to the new one instead of swapping, so a payment or a refreshed feed is
 /// legible as a change. It replaces stale digits in place; it never draws
 /// attention to itself, so it is never used to *decorate* a static number.
 ///

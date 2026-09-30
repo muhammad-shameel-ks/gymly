@@ -2,13 +2,16 @@
 ///
 /// Header owns the gym switcher and the profile entry point; this screen
 /// reads the selected gym id (`null` = All gyms → aggregate). Feed renders
-/// Overdue, then Due ≤7d, then Active, each as a section with a count chip
-/// that counts up only when the count changes. Cards carry Renew (opens
-/// [RenewSheet] and refreshes the feed on close), Call, WhatsApp, and open the
-/// member's record. Skeleton while loading, guided-empty (create the first
-/// gym when the Owner has none, else add a member) when bare, and
-/// error-retry on failure. Screen padding 20–24, 8px gaps, safe-area. Motion
-/// comes from `core/motion`; all colours from [AppPalette].
+/// Overdue, then Due soon, then Active, each as a section with a count chip
+/// that counts up only when the count changes. Cards carry Pay (opens the
+/// shared payment sheet and refreshes the feed on close), Call, WhatsApp, and
+/// open the member's record — Cancel, Reactivate and Change plan live there,
+/// never here. Skeleton while loading; guided-empty when bare (create the first
+/// gym when the Owner has none, add a member to a gym that has none, else
+/// `Nothing due today.`); error-retry on failure. Cancelled members are
+/// resolved out of the feed in the repository, not filtered here. Screen
+/// padding 20–24, 8px gaps, safe-area. Motion comes from `core/motion`; all
+/// colours from [AppPalette].
 library;
 
 import 'package:flutter/material.dart';
@@ -23,18 +26,14 @@ import '../../gyms/data/selected_gym.dart';
 import '../../gyms/providers/gyms_providers.dart' show gymsListProvider;
 import '../../gyms/widgets/gym_switcher.dart';
 import '../../members/models/member.dart';
+import '../../members/providers/members_providers.dart'
+    show membersListProvider;
 import '../../members/widgets/due_cue.dart';
 import '../../members/widgets/member_detail_screen.dart';
 import '../../members/widgets/member_form_sheet.dart';
 import '../data/dues_providers.dart';
 import 'dues_card.dart';
 import 'dues_states.dart';
-
-String _bucketTitle(DueBucket bucket) => switch (bucket) {
-      DueBucket.overdue => 'Overdue',
-      DueBucket.dueSoon => 'Due soon',
-      DueBucket.active => 'Active',
-    };
 
 /// Home dues feed. [onOpenMember] lets the app shell push the detail
 /// route; defaults to a [MaterialPageRoute] to [MemberDetailScreen].
@@ -125,12 +124,26 @@ class HomeScreen extends ConsumerWidget {
                   final total =
                       list.fold<int>(0, (n, s) => n + s.entries.length);
                   if (total == 0) {
+                    if (noGyms) {
+                      return DuesEmpty(onAddGym: () => _openGyms(context));
+                    }
+                    final gymId = selected;
+                    if (gymId == null) {
+                      // All gyms: the switcher above the feed is the action.
+                      return const DuesEmpty();
+                    }
+                    // An empty feed is the healthy state — unless this gym has
+                    // no members at all, which still needs its first one. While
+                    // the list loads, say the healthy thing; guide only once it
+                    // says the gym really is empty.
+                    final members = ref.watch(
+                      membersListProvider((gymId: gymId, query: '')),
+                    );
+                    final noMembers = members.value?.isEmpty ?? false;
                     return DuesEmpty(
-                      allGyms: selected == null,
-                      onAddGym: noGyms ? () => _openGyms(context) : null,
-                      onAddMember: selected == null
-                          ? null
-                          : () => _openAddMember(context, selected),
+                      onAddMember: noMembers
+                          ? () => _openAddMember(context, gymId)
+                          : null,
                     );
                   }
                   // One entrance per visit: sections and their cards rise in
@@ -237,7 +250,7 @@ class _SectionHeader extends StatelessWidget {
         ),
         const SizedBox(width: AppSpace.sm),
         Text(
-          _bucketTitle(bucket),
+          bucket.label,
           style: AppType.subtitle.copyWith(color: palette.text),
         ),
         const SizedBox(width: AppSpace.sm),

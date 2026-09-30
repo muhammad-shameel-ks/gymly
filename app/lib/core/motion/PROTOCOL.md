@@ -56,7 +56,7 @@ translation/scale, keep opacity**. Haptics are not motion; they stay on.
 | `Haptics.impact()` (light) | snap / toggle | button press, switch, row tap |
 | `Haptics.impact(strength: medium)` | a surface arrived | card expanding in place |
 | `Haptics.impact(strength: heavy)` | heavy commitment | destructive confirm accepted |
-| `Haptics.success()` | committed | save, renew, convert |
+| `Haptics.success()` | committed | save, payment, convert |
 | `Haptics.error()` | refused | validation failure, action aborted |
 | `Haptics.sheet()` | modal surface arrived | sheet, dialog, gym switcher |
 
@@ -64,7 +64,7 @@ translation/scale, keep opacity**. Haptics are not motion; they stay on.
 
 ```dart
 // Press: with no callbacks it wraps an inner InkWell instead of owning the tap.
-TapScale(onTap: renew, child: FilledButton(onPressed: renew, child: Text('Renew')));
+TapScale(onTap: pay, child: FilledButton(onPressed: pay, child: Text('Pay')));
 PressableCard(onTap: () => open(member), child: MemberRow(member));   // card / row state
 
 // Entrance: index = position; plays once per visit, cross-fades under Reduce Motion.

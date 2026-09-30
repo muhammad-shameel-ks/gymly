@@ -48,7 +48,6 @@ abstract final class SupabaseColumns {
   static const String memberId = 'member_id';
   static const String planId = 'plan_id';
   static const String startDate = 'start_date';
-  static const String expiryDate = 'expiry_date';
   static const String name = 'name';
   static const String phone = 'phone';
   static const String status = 'status';

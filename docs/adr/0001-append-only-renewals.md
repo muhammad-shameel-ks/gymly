@@ -1,7 +1,15 @@
 # ADR-0001: Append-only renewals
 
-- Status: accepted
+- Status: superseded by [ADR-0003](0003-part-payments-and-plan-cycles.md)
 - Date: 2026-09-29
+- Superseded by: ADR-0003 — manual per-payment renewals are gone; the plan cycle renews
+  by itself and money accrues per day.
+
+> **Superseded by ADR-0003.** Kept for history. The append-per-paid-period rule and the
+> `expiry_date` it relied on are no longer how Gymly works: a `memberships` row is now one
+> stretch with an optional `ended_on`/`end_reason`, nothing is written at a cycle
+> boundary, and money is tracked as a running tab of daily accrual against recorded
+> payments. Do not implement this ADR.
 
 ## Context
 

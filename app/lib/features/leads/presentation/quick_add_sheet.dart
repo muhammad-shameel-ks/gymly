@@ -1,7 +1,7 @@
 /// Quick-add bottom sheet: name + phone required, note optional.
 ///
-/// Sheet motion comes from [AppTransitions.sheetController] (350–500 ms
-/// budget); the fields stagger in once per open; the outcome pairs with one
+/// Sheet motion comes from `showAppSheet`'s own budget (`MotionSpec.sheet`,
+/// 350–500 ms); the fields stagger in once per open; the outcome pairs with one
 /// haptic — success on save, error on validation failure.
 library;
 
@@ -16,19 +16,11 @@ import '../data/lead_validators.dart';
 
 Future<void> showQuickAddSheet(BuildContext context) async {
   Haptics.sheet();
-  final controller = AppTransitions.sheetController(
-    Navigator.of(context),
+  await showAppSheet<void>(
+    context,
     reduceMotion: AppMotionConfig.reduceMotionOf(context),
+    builder: (_) => const _QuickAddForm(),
   );
-  try {
-    await showAppSheet<void>(
-      context,
-      transitionAnimationController: controller,
-      builder: (_) => const _QuickAddForm(),
-    );
-  } finally {
-    controller.dispose();
-  }
 }
 
 class _QuickAddForm extends ConsumerStatefulWidget {

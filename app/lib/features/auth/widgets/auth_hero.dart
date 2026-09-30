@@ -24,8 +24,8 @@ class AuthHero extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const GymlyWordmark(),
-        const SizedBox(height: AppSpace.sm),
+        const GymlyBrandLockup(markSize: 60),
+        const SizedBox(height: AppSpace.md),
         Text(
           tagline,
           style: AppType.body.copyWith(color: palette.secondary),

@@ -2,17 +2,19 @@
 ///
 /// Requires a single [gymId]; a null gym shows [PickGymPrompt] (other tabs
 /// filter to one gym — only Home aggregates "All gyms").
-/// Adding a member is the tab's FAB — same place, same dimmed-when-gym-less
-/// treatment as the Leads tab — plus the empty state's own CTA; search is the
-/// shared [AppSearchBar], so members and leads are pixel-identical.
-/// Tapping a row pushes [MemberDetailScreen]; rows stagger in once per visit.
-/// The last loaded rows stay on screen while the next query loads, so typing
-/// never flashes a skeleton and never replays that entrance.
+/// Each row is a [MemberWithDues]: the ring fills with the paid share of his tab
+/// (`tab.ringFill`), the money line reads `₹2,000 pending · due 12 Oct` (the
+/// same wording as the Home card), and a member who has stopped carries the
+/// `Cancelled` badge. Adding a member is the tab's FAB — same place, same
+/// dimmed-when-gym-less treatment as the Leads tab — plus the empty state's own
+/// CTA; search is the shared [AppSearchBar], so members and leads are
+/// pixel-identical. Tapping a row pushes [MemberDetailScreen]; rows stagger in
+/// once per visit. The last loaded rows stay on screen while the next query
+/// loads, so typing never flashes a skeleton and never replays that entrance.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../../core/motion/motion.dart';
 import '../../../core/theme/app_palette.dart';
@@ -25,8 +27,6 @@ import 'due_cue.dart';
 import 'member_detail_screen.dart';
 import 'member_form_sheet.dart';
 import 'member_states.dart';
-
-final _dayMonth = DateFormat('d MMM');
 
 class MembersScreen extends ConsumerStatefulWidget {
   const MembersScreen({super.key, required this.gymId});
@@ -61,26 +61,6 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
     );
   }
 
-  /// Plan + where the current subscription sits, in the voice's terms: money
-  /// and term when they decide the sentence, time relative while it is close,
-  /// the date once it is not.
-  String _dueLine(MemberWithDues e) {
-    final c = e.current;
-    if (c == null) return 'No subscription — renew to start';
-    final plan = c.planName ?? 'Subscription';
-    final days = c.daysToExpiry();
-    if (days < 0) {
-      final over = -days;
-      return over <= 30
-          ? '$plan · expired $over ${over == 1 ? 'day' : 'days'} ago'
-          : '$plan · expired ${_dayMonth.format(c.expiryDate)}';
-    }
-    if (days == 0) return '$plan · due today';
-    return days <= 14
-        ? '$plan · due in $days ${days == 1 ? 'day' : 'days'}'
-        : '$plan · due ${_dayMonth.format(c.expiryDate)}';
-  }
-
   Widget _list(List<MemberWithDues> rows, String gymId) {
     return ListView.separated(
       itemCount: rows.length,
@@ -93,7 +73,6 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
           index: i,
           child: _MemberRow(
             entry: e,
-            subtitle: _dueLine(e),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => MemberDetailScreen(
@@ -197,18 +176,17 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
 }
 
 class _MemberRow extends StatelessWidget {
-  const _MemberRow({
-    required this.entry,
-    required this.subtitle,
-    required this.onTap,
-  });
+  const _MemberRow({required this.entry, required this.onTap});
 
   final MemberWithDues entry;
-  final String subtitle;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
+    // A member whose tab has stopped: nothing in force today and the last
+    // stretch ended `cancelled` — which is what `MemberTab.payableTo` records.
+    final cancelled = entry.tab.payableTo != null;
     return PressableRow(
       onTap: onTap,
       padding: const EdgeInsets.all(12),
@@ -222,19 +200,30 @@ class _MemberRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    entry.member.name,
-                    style: TextStyle(
-                      color: context.palette.text,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          entry.member.name,
+                          style: TextStyle(
+                            color: palette.text,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (cancelled) ...[
+                        const SizedBox(width: AppSpace.sm),
+                        const MemberCancelledBadge(),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${entry.member.phone} · $subtitle',
+                    '${entry.member.phone} · ${moneyLine(entry.tab)}',
                     style: TextStyle(
-                      color: context.palette.secondary,
+                      color: palette.secondary,
                       fontSize: 13,
                     ),
                   ),

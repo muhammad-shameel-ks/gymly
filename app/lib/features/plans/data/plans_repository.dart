@@ -1,11 +1,12 @@
 /// Supabase data layer for plans.
 ///
 /// Only third-party imports (`supabase_flutter`); no foundation imports yet.
-/// Archiving a plan is a hard delete that is refused when subscriptions
-/// (`memberships` rows) still reference it — history must survive per
-/// ADR-0001. The DB foreign key surfaces Postgres 23503, mapped here to
-/// [ReferencedPlanException] so the UI can show a friendly block message
-/// instead of a raw error.
+/// Archiving a plan is a hard delete that is refused when stretches
+/// (`memberships` rows) still reference it: each stretch keeps the price and
+/// duration it was started with, but the plan row is still where its name comes
+/// from, so deleting it would orphan history (ADR-0003). The DB foreign key
+/// surfaces Postgres 23503, mapped here to [ReferencedPlanException] so the UI
+/// can show a friendly block message instead of a raw error.
 library;
 
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -82,9 +83,9 @@ class PlansRepository {
     return Plan.fromJson(row);
   }
 
-  /// Edit name/amount/duration. Past subscriptions keep their own
-  /// snapshot via the `plans` embed at read time, so editing a plan
-  /// never rewrites history rows.
+  /// Edit name/amount/duration. Stretches already running keep the price and
+  /// duration copied onto their own row when they started, so editing a plan
+  /// never reprices or re-dates them.
   Future<Plan> updatePlan({
     required String id,
     required String name,

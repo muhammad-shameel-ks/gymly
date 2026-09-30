@@ -1,38 +1,29 @@
-/// Member domain models (per GLOSSARY.md + DESIGN.md + ADR-0001).
+/// Member domain models (per GLOSSARY.md + DESIGN.md + ADR-0001/0002).
 ///
 /// - [Member]: paying person at a gym; identity = (gymId, phone).
-/// - [Subscription]: one row of `memberships`; current = latest expiry per member.
-/// - [DueBucket]: triage position derived from latest expiry vs today.
-/// - [MemberWithDues]: member + resolved current subscription for list rows.
+/// - [Subscription]: one row of `memberships` — one *stretch*: a snapshot of a
+///   plan's ₹ price and duration running from [Subscription.startDate] until
+///   [Subscription.endedOn] (`null` while the stretch is still open).
+/// - [SubscriptionEnd]: why a stretch stopped (`cancelled` / `planChange`).
+/// - [DueBucket]: triage position; derived by `computeTab` in
+///   `domain/member_money.dart`, never from a stored date.
+/// - [MemberWithDues]: member + computed tab for list rows.
 ///
-/// TODO(foundation): re-export spacing/radius/color tokens from
-/// `lib/core/theme/app_tokens.dart` when the scaffold lands; the widgets in
-/// this slice mirror those values locally until then.
+/// Every rupee figure a member owes is derived from the stretches and payments
+/// by `computeTab` — see `domain/member_money.dart`.
 library;
+
+import '../domain/member_money.dart';
 
 /// Triage bucket for a member (DESIGN.md §2, GLOSSARY.md "Due bucket").
 ///
-/// - [overdue]: expiry < today (or no subscription at all — needs attention).
-/// - [dueSoon]: expiry within 7 days (inclusive).
+/// - [overdue]: the latest passed deadline's target is not met.
+/// - [dueSoon]: not overdue, and the next deadline is within 7 days.
 /// - [active]: everything else.
 enum DueBucket {
   overdue,
   dueSoon,
   active;
-
-  /// Resolve a bucket from a latest-expiry date (date part only).
-  ///
-  /// A `null` expiry (member has no subscription rows) resolves to
-  /// [overdue] so the member surfaces in triage instead of vanishing.
-  static DueBucket fromExpiry(DateTime? expiry, {DateTime? today}) {
-    final now = today ?? DateTime.now();
-    final day = DateTime(now.year, now.month, now.day);
-    if (expiry == null) return DueBucket.overdue;
-    final exp = DateTime(expiry.year, expiry.month, expiry.day);
-    if (exp.isBefore(day)) return DueBucket.overdue;
-    if (exp.difference(day).inDays <= 7) return DueBucket.dueSoon;
-    return DueBucket.active;
-  }
 
   /// Short label for chips/dots.
   String get label => switch (this) {
@@ -83,7 +74,37 @@ class Member {
       );
 }
 
-/// One row of the `memberships` table (a Subscription per GLOSSARY.md).
+/// Why a stretch stopped (`memberships.end_reason`).
+///
+/// A stretch that is still running has a `null` reason.
+enum SubscriptionEnd {
+  cancelled,
+  planChange;
+
+  /// The `memberships.end_reason` value this writes.
+  String get dbValue => switch (this) {
+        SubscriptionEnd.cancelled => 'cancelled',
+        SubscriptionEnd.planChange => 'plan_change',
+      };
+
+  /// Parse `memberships.end_reason`; anything unrecognised reads as `null`.
+  static SubscriptionEnd? fromDb(String? raw) => switch (raw) {
+        'cancelled' => SubscriptionEnd.cancelled,
+        'plan_change' => SubscriptionEnd.planChange,
+        _ => null,
+      };
+
+  /// Short label for the history list.
+  String get label => switch (this) {
+        SubscriptionEnd.cancelled => 'Cancelled',
+        SubscriptionEnd.planChange => 'Changed plan',
+      };
+}
+
+/// One row of the `memberships` table: one *stretch* of a member's tab.
+///
+/// [price] and [durationDays] are the plan snapshot taken when the stretch
+/// started; both are `null` only on legacy rows, which accrue nothing.
 class Subscription {
   const Subscription({
     required this.id,
@@ -91,10 +112,11 @@ class Subscription {
     required this.memberId,
     this.planId,
     this.planName,
-    this.planAmount,
-    this.planDurationDays,
+    this.price,
+    this.durationDays,
     required this.startDate,
-    required this.expiryDate,
+    this.endedOn,
+    this.endReason,
   });
 
   final String id;
@@ -104,16 +126,29 @@ class Subscription {
   /// Nullable: legacy rows may predate plan assignment.
   final String? planId;
 
-  /// Denormalized at read time via the `plans` embed (may be absent).
+  /// Denormalized at read time via the `plans` embed (null when the plan is
+  /// gone).
   final String? planName;
-  final num? planAmount;
-  final int? planDurationDays;
+
+  /// Snapshot ₹ for one period. `null` on legacy rows → no accrual.
+  final int? price;
+
+  /// Snapshot duration in days. `null` on legacy rows → no accrual.
+  final int? durationDays;
 
   final DateTime startDate;
-  final DateTime expiryDate;
+
+  /// Last day the stretch runs (inclusive). `null` while it is open.
+  final DateTime? endedOn;
+
+  /// Why the stretch stopped; `null` while open.
+  final SubscriptionEnd? endReason;
+
+  /// True while the stretch has no end date.
+  bool get isOpen => endedOn == null;
 
   factory Subscription.fromJson(Map<String, dynamic> json) {
-    // Supabase embed: `plan:plans(name,amount,duration_days)` or `plans(...)`.
+    // Supabase embed: `plan:plans(name)` or `plans(...)`.
     final embedded = json['plan'] ?? json['plans'];
     final plan = embedded is List
         ? (embedded.isEmpty ? null : embedded.first as Map<String, dynamic>)
@@ -124,40 +159,35 @@ class Subscription {
       memberId: json['member_id'] as String,
       planId: json['plan_id'] as String?,
       planName: plan?['name'] as String?,
-      planAmount: plan?['amount'] as num?,
-      planDurationDays: (plan?['duration_days'] as num?)?.toInt(),
+      price: (json['price'] as num?)?.toInt(),
+      durationDays: (json['duration_days'] as num?)?.toInt(),
       startDate: DateTime.parse(json['start_date'] as String),
-      expiryDate: DateTime.parse(json['expiry_date'] as String),
+      endedOn: _parseDate(json['ended_on']),
+      endReason: SubscriptionEnd.fromDb(json['end_reason'] as String?),
     );
-  }
-
-  DueBucket bucket({DateTime? today}) =>
-      DueBucket.fromExpiry(expiryDate, today: today);
-
-  /// Whole days from [today] to expiry (negative when overdue).
-  int daysToExpiry({DateTime? today}) {
-    final now = today ?? DateTime.now();
-    final day = DateTime(now.year, now.month, now.day);
-    final exp = DateTime(expiryDate.year, expiryDate.month, expiryDate.day);
-    return exp.difference(day).inDays;
   }
 }
 
-/// Member + resolved current subscription (latest expiry) for list rows.
+/// Member + computed tab for list rows.
 ///
-/// [current] is `null` when the member has no subscription rows yet.
-/// [history] is populated only by the detail path (desc by expiry).
+/// [inForce] is the stretch covering today, when there is one.
 class MemberWithDues {
   const MemberWithDues({
     required this.member,
-    required this.current,
-    this.history = const [],
+    required this.tab,
+    this.inForce,
   });
 
   final Member member;
-  final Subscription? current;
-  final List<Subscription> history;
+  final MemberTab tab;
+  final Subscription? inForce;
 
-  DueBucket get bucket =>
-      DueBucket.fromExpiry(current?.expiryDate);
+  DueBucket get bucket => tab.bucket;
+}
+
+/// `YYYY-MM-DD` (or full ISO) → local midnight; `null`/blank → `null`.
+DateTime? _parseDate(Object? raw) {
+  if (raw is! String || raw.isEmpty) return null;
+  final parsed = DateTime.parse(raw);
+  return DateTime(parsed.year, parsed.month, parsed.day);
 }

@@ -37,8 +37,8 @@ final duesScopeProvider = FutureProvider<List<String>>((ref) async {
   return [for (final g in gyms) g.id];
 }, name: 'duesScope');
 
-/// Dues feed: members + current subscriptions, sorted Overdue → Due soon →
-/// Active, earliest expiry first inside each bucket.
+/// Dues feed: members with money outstanding or a deadline in play, sorted
+/// Overdue → Due soon → Active, earliest deadline first inside each bucket.
 final duesFeedProvider = FutureProvider<List<DuesEntry>>((ref) async {
   final gymIds = await ref.watch(duesScopeProvider.future);
   if (gymIds.isEmpty) return const [];
@@ -47,7 +47,9 @@ final duesFeedProvider = FutureProvider<List<DuesEntry>>((ref) async {
   return sortDuesFeed(
     entries,
     bucketOf: (e) => e.bucket,
-    expiryOf: (e) => e.current?.expiryDate,
+    // Inside a bucket a row orders by its deadline: the missed one for an
+    // overdue member, else the next one.
+    deadlineOf: (e) => e.missedDeadline ?? e.nextDeadline,
     nameOf: (e) => e.member.name,
   );
 }, name: 'duesFeed');

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Gymly">
+  <title>Gymly</title>
+  <!-- Design tokens: bg #0B0C10, border #262A33, accent #6366F1, text #F2F3F7 -->
+  <rect width="1024" height="1024" fill="#0B0C10"/>
+  <g transform="translate(512 512)">
+    <!-- The DueRing: empty track, then the paid share from the top clockwise -->
+    <circle r="300" fill="none" stroke="#262A33" stroke-width="58"/>
+    <path d="M 0 -300 A 300 300 0 0 1 295.4 52.1" fill="none" stroke="#6366F1" stroke-width="58" stroke-linecap="round"/>
+    <!-- A dumbbell, legible down to 48 px: two plates and one bar -->
+    <g fill="#F2F3F7">
+      <rect x="-232" y="-84" width="98" height="168" rx="30"/>
+      <rect x="134" y="-84" width="98" height="168" rx="30"/>
+      <rect x="-122" y="-22" width="244" height="44" rx="22"/>
+    </g>
+  </g>
+</svg>

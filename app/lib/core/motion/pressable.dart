@@ -21,7 +21,7 @@
 ///
 /// **Nesting:** an inner button wins its own tap (Flutter's arena), but the card
 /// would still flash its press state on the way down. So a card whose content
-/// carries its own actions (the dues card's Renew/Call/WhatsApp) should be
+/// carries its own actions (the dues card's Pay/Call/WhatsApp) should be
 /// inert — pass no `onTap` — and let the buttons own their presses; use
 /// [PressableRow] for a row that is itself the one action.
 library;

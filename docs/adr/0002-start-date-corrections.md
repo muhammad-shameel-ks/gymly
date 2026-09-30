@@ -2,6 +2,13 @@
 
 - Status: accepted
 - Date: 2026-09-30
+- Amended by: [ADR-0003](0003-part-payments-and-plan-cycles.md) — a correction is now a
+  single UPDATE of `start_date`; there is no stored expiry to recompute.
+
+> Amended by ADR-0003. The decision below stands (a correction edits the in-force row in
+> place), but the row no longer carries an `expiry_date`: correcting `start_date` moves
+> the accrual clock and the deadlines with it, and the due bucket is read from money
+> owed, not from a stored expiry.
 
 ## Context
 

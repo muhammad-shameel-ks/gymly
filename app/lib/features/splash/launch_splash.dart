@@ -40,7 +40,10 @@ class LaunchSplash extends StatelessWidget {
     final surface = context.palette.surface;
     return AnimatedBuilder(
       animation: progress,
-      child: const GymlyWordmark(),
+      child: const GymlyBrandLockup(
+        markSize: 76,
+        crossAxisAlignment: CrossAxisAlignment.center,
+      ),
       builder: (BuildContext context, Widget? mark) {
         final t = progress.value.clamp(0.0, 1.0);
         return Opacity(

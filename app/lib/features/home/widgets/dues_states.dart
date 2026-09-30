@@ -62,20 +62,13 @@ class DuesSkeleton extends StatelessWidget {
 ///    first one (accent CTA 'Add gym').
 /// 2. else [onAddMember] non-null → a gym is in scope but has **no members**:
 ///    add its first member.
-/// 3. else → All gyms scope with gyms present: the next action is choosing a
-///    gym — the switcher sits above the feed, so there is no CTA here.
+/// 3. else → the triage is empty because nothing is due: the healthy state,
+///    said plainly, with no CTA (the next action is the feed itself).
 class DuesEmpty extends StatelessWidget {
-  const DuesEmpty({
-    super.key,
-    required this.allGyms,
-    required this.onAddMember,
-    this.onAddGym,
-  });
+  const DuesEmpty({super.key, this.onAddMember, this.onAddGym});
 
-  /// True when the feed scope is All gyms.
-  final bool allGyms;
-
-  /// Null when no single gym is in scope (CTA hidden; prompt picks gym).
+  /// Non-null when a single gym is in scope and has no members yet; null when
+  /// All gyms is selected (the switcher above the feed picks the gym).
   final VoidCallback? onAddMember;
 
   /// Non-null when the Owner owns zero gyms: the next action is creating one,
@@ -86,6 +79,7 @@ class DuesEmpty extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final noGyms = onAddGym != null;
+    final noMembers = !noGyms && onAddMember != null;
     return ScrollableStateBody(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -93,7 +87,11 @@ class DuesEmpty extends StatelessWidget {
           // One-shot entrance, once per visit: a rise, never a loop.
           RiseIn(
             child: Icon(
-              noGyms ? Icons.storefront_outlined : Icons.fitness_center,
+              noGyms
+                  ? Icons.storefront_outlined
+                  : noMembers
+                      ? Icons.fitness_center
+                      : Icons.check_circle_outline,
               size: 48,
               color: palette.secondary,
             ),
@@ -102,9 +100,9 @@ class DuesEmpty extends StatelessWidget {
           Text(
             noGyms
                 ? 'Add your first gym to start tracking dues.'
-                : allGyms
-                    ? 'Choose a gym to add its first member.'
-                    : 'Add your first member to start tracking renewals.',
+                : noMembers
+                    ? 'Add your first member to start tracking dues.'
+                    : 'Nothing due today.',
             style: AppType.subtitle.copyWith(color: palette.text),
             textAlign: TextAlign.center,
           ),
@@ -118,7 +116,7 @@ class DuesEmpty extends StatelessWidget {
                 child: const Text('Add gym'),
               ),
             ),
-          ] else if (onAddMember != null) ...[
+          ] else if (noMembers) ...[
             const SizedBox(height: AppSpace.md),
             TapScale(
               onTap: null,

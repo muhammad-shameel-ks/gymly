@@ -21,6 +21,7 @@ import '../data/members_repository.dart';
 import '../models/member.dart';
 import '../providers/members_providers.dart';
 import 'member_detail_screen.dart';
+import 'rupee_field.dart';
 
 class MemberFormSheet extends ConsumerStatefulWidget {
   const MemberFormSheet({super.key, required this.gymId, this.existing});
@@ -39,6 +40,7 @@ class _MemberFormSheetState extends ConsumerState<MemberFormSheet> {
   late final TextEditingController _name;
   late final TextEditingController _phone;
   late final TextEditingController _note;
+  final _received = TextEditingController();
   String? _planId;
   bool _saving = false;
 
@@ -48,6 +50,14 @@ class _MemberFormSheetState extends ConsumerState<MemberFormSheet> {
   static final _nonDigits = RegExp(r'\D');
 
   bool get _editing => widget.existing != null;
+
+  /// `Received now` (₹) handed over with the first stretch; null when nothing
+  /// was received, so no payment row is written.
+  int? get _firstPayment {
+    if (_planId == null) return null;
+    final received = rupeesOf(_received.text) ?? 0;
+    return received > 0 ? received : null;
+  }
 
   @override
   void initState() {
@@ -63,6 +73,7 @@ class _MemberFormSheetState extends ConsumerState<MemberFormSheet> {
     _name.dispose();
     _phone.dispose();
     _note.dispose();
+    _received.dispose();
     super.dispose();
   }
 
@@ -102,6 +113,7 @@ class _MemberFormSheetState extends ConsumerState<MemberFormSheet> {
           phone: _phone.text,
           note: _note.text,
           planId: _planId,
+          firstPayment: _firstPayment,
         );
         invalidateMemberViews(ref,
             gymId: widget.gymId, memberId: created.id);
@@ -211,12 +223,33 @@ class _MemberFormSheetState extends ConsumerState<MemberFormSheet> {
                         ],
                         onChanged: (v) {
                           Haptics.select();
-                          setState(() => _planId = v);
+                          setState(() {
+                            _planId = v;
+                            // The plan's price, received in full, unless the
+                            // owner changes it (0 is allowed).
+                            final plan = v == null
+                                ? null
+                                : ps.where((p) => p.id == v).firstOrNull;
+                            _received.text =
+                                plan == null ? '' : '${plan.amount.round()}';
+                          });
                         },
                       ),
                     ) ??
                     const SizedBox.shrink(),
               ),
+              if (_planId != null) ...[
+                const SizedBox(height: 8),
+                StaggeredEntrance(
+                  index: 4,
+                  child: RupeeField(
+                    controller: _received,
+                    label: 'Received now',
+                    enabled: !_saving,
+                    helperText: 'Leave 0 if he paid nothing now.',
+                  ),
+                ),
+              ],
             ],
             if (_duplicate != null) ...[
               const SizedBox(height: 12),

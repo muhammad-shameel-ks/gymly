@@ -1,9 +1,14 @@
 /// Due cues for the members slice: the signature ring + the compact dot.
 ///
-/// The row and header cue is [MemberAvatar] — the app's signature
-/// [DueRing] around the member's initials, empty the day a member renews and
-/// full on the expiry date, so "who is running out" is legible at a glance.
-/// [DueDot] stays for far-field feeds that carry no ring.
+/// The row and header cue is [MemberAvatar] — the app's signature [DueRing]
+/// around the member's initials. The ring fills with the paid share of the
+/// running tab (`MemberTab.ringFill`, i.e. money paid against the plan he is on)
+/// and takes its colour from the due bucket, so "who is behind" is legible at a
+/// glance. [DueDot] stays for far-field feeds that carry no ring.
+///
+/// The wording lives in `money_text.dart` and is re-exported here:
+/// [moneyLine] (`₹2,000 pending · due 12 Oct` / `₹500 advance · due 12 Oct`),
+/// [rupees] and [shortDate] — Home's card and the member list read the same.
 ///
 /// Cue *fills* are mode-independent: [dueColor] returns the dark palette's
 /// status values in both modes, so a far-field dot keeps the same weight on
@@ -16,7 +21,10 @@ import 'package:flutter/material.dart';
 
 import '../../../core/signature/signature.dart';
 import '../../../core/theme/app_palette.dart';
+import '../../../core/theme/app_tokens.dart';
 import '../models/member.dart';
+
+export 'money_text.dart';
 
 /// Mode-independent cue fill for a bucket.
 Color dueColor(DueBucket bucket) => switch (bucket) {
@@ -58,10 +66,10 @@ class DueDot extends StatelessWidget {
 
 /// The member's initials inside the signature due ring.
 ///
-/// The ring encodes the elapsed fraction of the member's current subscription
-/// period ([periodProgress]); with no subscription it paints full and muted
-/// and claims no bucket. [size] is the ring's outer diameter — give it the
-/// avatar's diameter plus twice [strokeWidth].
+/// The ring fills with the paid share of the running tab ([MemberTab.ringFill]);
+/// when nothing is owed there is nothing to encode, so it paints full and
+/// muted and claims no bucket. [size] is the ring's outer diameter — give it
+/// the avatar's diameter plus twice [strokeWidth].
 class MemberAvatar extends StatelessWidget {
   const MemberAvatar({
     super.key,
@@ -77,9 +85,10 @@ class MemberAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final diameter = size - strokeWidth * 2;
+    final tab = entry.tab;
     return DueRing(
-      progress: periodProgress(entry.current),
-      bucket: entry.bucket,
+      progress: tab.owed == 0 ? null : tab.ringFill,
+      bucket: tab.bucket,
       size: size,
       strokeWidth: strokeWidth,
       child: SizedBox.square(
@@ -100,6 +109,31 @@ class MemberAvatar extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The `Cancelled` badge a member's row and record carry once he has stopped.
+///
+/// A quiet pill — the state is a fact, not an alarm, so it wears the neutral
+/// border/secondary tokens rather than the error colour.
+class MemberCancelledBadge extends StatelessWidget {
+  const MemberCancelledBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpace.sm, vertical: 2),
+      decoration: BoxDecoration(
+        color: palette.bg,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        border: Border.all(color: palette.border),
+      ),
+      child: Text(
+        'Cancelled',
+        style: AppType.caption.copyWith(color: palette.secondary),
       ),
     );
   }
