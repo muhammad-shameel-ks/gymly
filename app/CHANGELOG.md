@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/muhammad-shameel-ks/gymly/compare/v1.1.0...v1.1.1) (2026-09-30)
+
+
+### Fixes
+
+* system back moves to Dues before it leaves the app ([#10](https://github.com/muhammad-shameel-ks/gymly/issues/10)) ([f8de73a](https://github.com/muhammad-shameel-ks/gymly/commit/f8de73a6e5a8fd92d09529cdf6b949bad162e00e))
+
 ## [1.1.0](https://github.com/muhammad-shameel-ks/gymly/compare/v1.0.1...v1.1.0) (2026-09-30)
 
 
