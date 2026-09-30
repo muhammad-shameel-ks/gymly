@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/muhammad-shameel-ks/gymly/compare/v1.0.1...v1.1.0) (2026-09-30)
+
+
+### Features
+
+* **updater:** check, download and install updates from Profile ([#8](https://github.com/muhammad-shameel-ks/gymly/issues/8)) ([4d648f9](https://github.com/muhammad-shameel-ks/gymly/commit/4d648f9a6ee6fefa53ffc72f0e53aac4ec39cc06))
+
 ## [1.0.1](https://github.com/muhammad-shameel-ks/gymly/compare/v1.0.0...v1.0.1) (2026-09-30)
 
 
