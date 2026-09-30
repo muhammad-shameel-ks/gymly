@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/muhammad-shameel-ks/gymly/compare/v1.0.0...v1.0.1) (2026-09-30)
+
+
+### Fixes
+
+* **android:** declare INTERNET in the main manifest ([#5](https://github.com/muhammad-shameel-ks/gymly/issues/5)) ([2b8c26e](https://github.com/muhammad-shameel-ks/gymly/commit/2b8c26e5c4c9767e059800084e46019b90eb9f2f))
+
 ## [1.0.0](https://github.com/muhammad-shameel-ks/gymly/releases/tag/v1.0.0) (2026-09-30)
 
 First release. Gymly is the gym owner's dues desk: **what to collect today, from
