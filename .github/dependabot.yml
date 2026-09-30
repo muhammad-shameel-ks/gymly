@@ -1,0 +1,32 @@
+version: 2
+
+updates:
+  # Flutter/Dart packages for the app.
+  - package-ecosystem: pub
+    directory: /app
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      pub-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+
+  # The Gradle/Android side (AGP, Kotlin, the wrapper).
+  - package-ecosystem: gradle
+    directory: /app/android
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+
+  # The workflow actions themselves, which is how the action majors here stay
+  # honest instead of rotting.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ['*']

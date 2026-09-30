@@ -1,0 +1,138 @@
+name: Release
+
+# Two triggers, one pipeline:
+#
+#  1. Push to `main` → release-please opens/updates a release PR (version bump +
+#     CHANGELOG). Merging that PR is what cuts a release: release-please tags and
+#     publishes, and the `android` job in *this same run* attaches the artifacts.
+#     It must be the same run: a tag created with the default GITHUB_TOKEN does
+#     not trigger another workflow run, so a tag-triggered build would never fire.
+#  2. A manually pushed `v*` tag (or a workflow_dispatch naming a tag) → build and
+#     attach, so a release can be rebuilt without re-tagging.
+#
+# Artifacts: per-ABI release APKs for sideloading plus the AAB for Play, signed
+# with the upload key when the ANDROID_KEYSTORE_* secrets exist (debug-signed
+# otherwise, and the APK names say so), Dart-obfuscated with the symbol files kept
+# as a workflow artifact for de-minifying crash reports.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and attach
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: '3.47.5'
+  JAVA_VERSION: '17'
+
+jobs:
+  release-please:
+    name: Release PR
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  android:
+    name: Android artifacts
+    needs: release-please
+    if: |
+      always() && (
+        needs.release-please.outputs.released == 'true' ||
+        startsWith(github.ref, 'refs/tags/v') ||
+        github.event_name == 'workflow_dispatch'
+      )
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    env:
+      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || needs.release-please.outputs.tag || github.ref }}
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: gradle/actions/setup-gradle@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Resolve the release tag
+        run: echo "TAG=$(git describe --tags --exact-match)" >> "$GITHUB_ENV"
+      - name: Write the signing config
+        if: env.KEYSTORE_B64 != ''
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload-keystore.jks"
+          cat > android/key.properties <<EOF
+          storePassword=$KEYSTORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=$RUNNER_TEMP/upload-keystore.jks
+          EOF
+      - name: Packages
+        run: flutter pub get
+      - name: Build the app bundle
+        run: >
+          flutter build appbundle --release --obfuscate
+          --split-debug-info=build/symbols --build-number=${{ github.run_number }}
+      - name: Build the split APKs
+        run: >
+          flutter build apk --release --split-per-abi --obfuscate
+          --split-debug-info=build/symbols --build-number=${{ github.run_number }}
+      - name: Name the artifacts
+        run: |
+          mkdir -p dist
+          suffix=""
+          [ "$KEYSTORE_B64" = "" ] && suffix="-debugsigned"
+          cp build/app/outputs/bundle/release/app-release.aab "dist/gymly-$TAG$suffix.aab"
+          for apk in build/app/outputs/flutter-apk/app-*-release.apk; do
+            abi=$(basename "$apk" | sed 's/^app-\(.*\)-release\.apk$/\1/')
+            cp "$apk" "dist/gymly-$TAG-$abi$suffix.apk"
+          done
+          ls -la dist
+      - name: Signing check
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          for apk in dist/*.apk; do
+            echo "== $apk"
+            "$APKSIGNER" verify --print-certs "$apk" | head -3
+          done
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --title "Gymly $TAG" --generate-notes
+          gh release upload "$TAG" dist/* --clobber
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gymly-symbols-${{ github.ref_name }}
+          if-no-files-found: error
+          path: app/build/symbols/*

@@ -15,3 +15,7 @@ Single-context: one `GLOSSARY.md` + `docs/adr/` at the repo root. See `docs/agen
 ### Product design
 
 V1 scope, IA, visual/motion system, data contract: see `DESIGN.md` at the repo root.
+
+### CI/CD
+
+Workflows, caching, the release flow and Android signing: see `docs/ci-cd.md`.
