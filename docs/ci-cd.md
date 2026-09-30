@@ -11,7 +11,7 @@ so every workflow runs with `working-directory: app`.
 | `.github/workflows/ci.yml` | PR to `main`, push to `main`, manual | `flutter pub get`, `flutter analyze`, `flutter test`, and in parallel the same release-mode split APKs the release builds — uploaded as artifacts and signature-checked. Docs-only changes are skipped (`paths-ignore`). |
 | `.github/workflows/release.yml` | push to `main`, push of a `v*` tag, manual (with a tag) | On `main`: release-please opens/updates the release PR, `publish` merges it, release-please tags and publishes, and `android` builds the signed AAB + per-ABI APKs and attaches them. A hand-pushed `v*` tag or a `workflow_dispatch` only builds and attaches. |
 | `.github/dependabot.yml` | weekly / monthly | Dependency PRs for pub, Gradle and the workflow actions. |
-| `.github/workflows/opencode.yml` | issue opened or labelled | Runs the OpenCode agent on an issue that carries `ready-for-agent`; it implements the issue and opens a PR. See [Agent on issues](#agent-on-issues). |
+| `.github/workflows/opencode.yml` | issue labelled | Runs the OpenCode agent when an issue is labelled `ready-for-agent`; it implements the issue and opens a PR. See [Agent on issues](#agent-on-issues). |
 
 CI and Release share a `concurrency` group per ref: a superseded CI run is
 cancelled, a release run never is — a second push to `main` queues behind the
@@ -36,11 +36,16 @@ PRs.
 
 ### Agent on issues
 
-`.github/workflows/opencode.yml` runs the OpenCode agent when an issue carries
-the `ready-for-agent` label — opened with it, or labelled later. There is no
-comment command to type. The label *is* the trigger because this repository is
-public: anyone can open an issue, but only someone with write access can label
-one, so a stranger cannot start a run or feed the agent an injected prompt.
+`.github/workflows/opencode.yml` runs the OpenCode agent when an issue is
+labelled `ready-for-agent` — the label applied as you create the issue, or added
+later to one already open. There is no comment command to type. The trigger is
+the `labeled` event specifically: creating an issue that already carries the
+label emits both `opened` and `labeled`, and matching on both ran the agent
+twice on the same issue.
+
+The label is the gate because this repository is public: anyone can open an
+issue, but only someone with write access can label one, so a stranger cannot
+start a run or feed the agent an injected prompt.
 
 The agent reads `AGENTS.md`, implements the issue on a branch, runs
 `flutter analyze` and `flutter test`, and opens a pull request with a

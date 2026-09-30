@@ -1,8 +1,8 @@
 name: opencode
 
-# The agent works an issue on its own — no `/oc` comment needed. An issue that
-# carries the `ready-for-agent` label, whether it is opened with it or labelled
-# later, starts a run.
+# The agent works an issue on its own — no `/oc` comment needed. Labelling an
+# issue `ready-for-agent` starts a run: label it as you create the issue, or add
+# the label later to one already open.
 #
 # The label is the trigger *because* this repository is public: anyone can open
 # an issue, but only someone with write access can label one, so a stranger
@@ -16,8 +16,10 @@ name: opencode
 # and grant `contents: write`, `pull-requests: write`, `issues: write` here.
 
 on:
+  # `labeled` alone: creating an issue with the label already on it emits both
+  # `opened` and `labeled`, which ran the agent twice on the same issue.
   issues:
-    types: [opened, labeled]
+    types: [labeled]
 
 # One run per issue: a label added while a run is in flight waits, never races.
 concurrency:
@@ -26,7 +28,7 @@ concurrency:
 
 jobs:
   opencode:
-    if: contains(github.event.issue.labels.*.name, 'ready-for-agent')
+    if: github.event.label.name == 'ready-for-agent'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
