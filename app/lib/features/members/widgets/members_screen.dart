@@ -51,13 +51,24 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
     super.dispose();
   }
 
-  void _openCreate() {
+  Future<void> _openCreate() async {
     final gymId = widget.gymId;
     if (gymId == null) return;
     Haptics.sheet();
-    showAppSheet<void>(
+    final open = await showAppSheet<Member>(
       context,
       builder: (_) => MemberFormSheet(gymId: gymId),
+    );
+    // The sheet answered "that phone is already a member — open them instead":
+    // the push belongs to this tab's stack, and the sheet itself lives on the
+    // root navigator (above the whole shell), so it cannot do it.
+    if (open == null || !mounted) return;
+    Haptics.impact();
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            MemberDetailScreen(gymId: open.gymId, memberId: open.id),
+      ),
     );
   }
 

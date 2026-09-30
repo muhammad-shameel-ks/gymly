@@ -2,8 +2,12 @@
 ///
 /// On a 23505 conflict the repository throws [DuplicateMemberException]; this
 /// sheet catches it and answers with the non-blaming "already a member" card
-/// plus a link to the existing member's detail. Create mode offers a plan
-/// picker (from the plans table) to assign the first subscription.
+/// plus a link to the existing member. That link closes the sheet and *returns*
+/// the member to the caller, which pushes the detail on its own navigator: this
+/// sheet is a root-navigator route, so a push from here would sit above the
+/// whole shell — no tab bar, and a page outside the tab's stack. Create mode
+/// offers a plan picker (from the plans table) to assign the first
+/// subscription.
 ///
 /// Content staggers in once per open on the shared [AppSheet] chrome (surface,
 /// radius, keyboard inset, title), the primary CTA carries its busy state
@@ -20,7 +24,6 @@ import '../../../core/widgets/app_sheet.dart';
 import '../data/members_repository.dart';
 import '../models/member.dart';
 import '../providers/members_providers.dart';
-import 'member_detail_screen.dart';
 import 'rupee_field.dart';
 
 class MemberFormSheet extends ConsumerStatefulWidget {
@@ -140,17 +143,16 @@ class _MemberFormSheetState extends ConsumerState<MemberFormSheet> {
     }
   }
 
+  /// Closes the sheet and hands the conflicting member back to its caller (the
+  /// sheet's result), so the screen that opened it pushes the detail on **its
+  /// own** navigator — the tab's branch — and the page joins that tab's stack,
+  /// exactly like `/gyms` and every other pushed page. This sheet is a
+  /// root-navigator route, so a push from here would land above the whole shell:
+  /// a full-screen page with no tab bar, outside the tab's back stack.
   void _openDuplicate() {
     final dup = _duplicate;
     if (dup == null) return;
-    Haptics.impact();
-    Navigator.of(context).pop();
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) =>
-            MemberDetailScreen(gymId: widget.gymId, memberId: dup.id),
-      ),
-    );
+    Navigator.of(context).pop(dup);
   }
 
   @override

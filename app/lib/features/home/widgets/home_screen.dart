@@ -42,12 +42,23 @@ class HomeScreen extends ConsumerWidget {
 
   final void Function(BuildContext context, DuesEntry entry)? onOpenMember;
 
-  void _openAddMember(BuildContext context, String gymId) {
+  void _openAddMember(BuildContext context, String gymId) async {
     // A modal surface is arriving: one press, one haptic.
     Haptics.sheet();
-    showAppSheet<void>(
+    final open = await showAppSheet<Member>(
       context,
       builder: (_) => MemberFormSheet(gymId: gymId),
+    );
+    // The sheet answered "that phone is already a member — open them instead":
+    // the push belongs to this tab's stack, and the sheet itself lives on the
+    // root navigator (above the whole shell), so it cannot do it.
+    if (open == null || !context.mounted) return;
+    Haptics.impact();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            MemberDetailScreen(gymId: open.gymId, memberId: open.id),
+      ),
     );
   }
 
