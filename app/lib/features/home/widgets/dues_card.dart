@@ -1,31 +1,35 @@
-/// Home dues card: name, plan, due line, amount + thumb-zone actions.
+/// Home dues card: name, plan, money line + thumb-zone actions.
 ///
 /// One card per dues entry: the member's initials sit inside the signature
-/// [DueRing] (how much of the period has run out — empty the day they renew,
-/// full on the expiry date), then name + `gym · plan · due` line + amount, then
-/// a one-thumb action row: **Renew** (accent primary, opens the Renew sheet) /
-/// **Call** (`tel:`) / **WhatsApp** (`wa.me`). Tap targets ≥ 48dp, 8px gaps.
+/// [DueRing] — filled with money paid against the plan he is on — then the name and
+/// one caption: the gym (All-gyms feed only), the plan, and the money line
+/// `₹2,000 pending · due 12 Oct` (`₹500 advance` when paid ahead) in the
+/// bucket's status colour, the same colour the ring sweeps. Below it a
+/// one-thumb action row: **Pay** (accent primary, opens the shared payment
+/// sheet) / **Call** (`tel:`) / **WhatsApp** (`wa.me`). Cancel, Reactivate and
+/// Change plan live on the member's record, never here. Tap targets ≥ 48dp,
+/// 8px gaps.
 ///
-/// The ring's sweep is the bucket colour, so the card needs no separate status
-/// dot. Entrance, press and count-up motion all come from `core/motion`;
-/// there is no local controller or timer here. Colours come from [AppPalette].
+/// Entrance, press and count-up motion all come from `core/motion`; there is no
+/// local controller or timer here. Colours come from [AppPalette].
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/contact/contact_launcher.dart';
 import '../../../core/motion/motion.dart';
 import '../../../core/signature/signature.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_tokens.dart';
-import '../../../core/widgets/app_sheet.dart';
 import '../../members/widgets/due_cue.dart';
-import '../../members/widgets/renew_sheet.dart';
+import '../../members/widgets/pay_sheet.dart';
 import '../data/dues_providers.dart';
 
-/// Dues card with Renew / Call / WhatsApp actions.
-class DuesCard extends ConsumerWidget {
+/// Dues card with Pay / Call / WhatsApp actions.
+///
+/// The card never writes: Pay hands off to [showPaySheet], which records the
+/// receipt and refreshes the feed, so the card needs no provider of its own.
+class DuesCard extends StatelessWidget {
   const DuesCard({super.key, required this.entry, this.index = 0, this.onTap});
 
   final DuesEntry entry;
@@ -37,25 +41,27 @@ class DuesCard extends ConsumerWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final e = entry;
     final palette = context.palette;
-    final current = e.current;
-    final amount = current?.planAmount;
     // One status colour per bucket — the exact one `DueRing` sweeps — so the
-    // due line and the ring read the same way (DESIGN.md §4).
+    // money line and the ring read the same way (DESIGN.md §4).
     final status = dueTextColor(palette, e.bucket);
-    // One caption, one idea: the gym (All-gyms feed only), the plan, the date.
-    // Gym/plan stay secondary; the due line carries the bucket colour and its
-    // own wording, so the stage never depends on colour alone.
+    // One caption, two ideas at most: the gym (All-gyms feed only) and the
+    // plan stay secondary; the money line — what he owes and the date it
+    // answers to — carries the bucket colour and its own wording, so the stage
+    // never depends on colour alone.
+    final money = moneyLine(e.tab);
     final caption = <InlineSpan>[
       if (e.gymName != null) TextSpan(text: '${e.gymName!} · '),
-      if (current != null)
-        TextSpan(text: '${current.planName ?? 'Add a plan'} · '),
-      TextSpan(
-        text: e.dueLine(),
-        style: TextStyle(color: status, fontWeight: FontWeight.w600),
-      ),
+      TextSpan(text: e.planName ?? 'Add a plan'),
+      if (money.isNotEmpty) ...[
+        const TextSpan(text: ' · '),
+        TextSpan(
+          text: money,
+          style: TextStyle(color: status, fontWeight: FontWeight.w600),
+        ),
+      ],
     ];
 
     return StaggeredEntrance(
@@ -68,7 +74,11 @@ class DuesCard extends ConsumerWidget {
             Row(
               children: [
                 DueRing(
-                  progress: periodProgress(current),
+                  // Nothing owed yet (a legacy row, or a stretch that has not
+                  // started) paints the full muted ring instead of claiming a
+                  // paid-up bucket; otherwise the ring is money paid against
+                  // the plan he is on.
+                  progress: e.tab.owed == 0 ? null : e.tab.ringFill,
                   bucket: e.bucket,
                   size: 42,
                   child: _MemberInitials(name: e.member.name),
@@ -94,29 +104,6 @@ class DuesCard extends ConsumerWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: AppSpace.sm),
-                if (amount == null)
-                  Text(
-                    // The model's own label for a member with no plan.
-                    e.amountLabel,
-                    style: AppType.body.copyWith(
-                      color: palette.secondary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  )
-                else
-                  // Rolls only when the value on screen changes — never on
-                  // first paint, so a card cannot show another member's amount.
-                  AnimatedAmount(
-                    amount: amount.toDouble(),
-                    initialAmount: amount.toDouble(),
-                    formatter: (v) =>
-                        rupeeLabel(v, whole: amount.remainder(1) == 0),
-                    style: AppType.body.copyWith(
-                      color: palette.text,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
               ],
             ),
             const SizedBox(height: AppSpace.sm + AppSpace.xs),
@@ -129,9 +116,9 @@ class DuesCard extends ConsumerWidget {
                     onTap: null,
                     dimOpacity: 0.94,
                     child: FilledButton(
-                      onPressed: () => _openRenew(context, ref, e),
+                      onPressed: () => _openPay(context, e),
                       child: const Text(
-                        'Renew',
+                        'Pay',
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
@@ -158,22 +145,24 @@ class DuesCard extends ConsumerWidget {
     );
   }
 
-  void _openRenew(BuildContext context, WidgetRef ref, DuesEntry e) {
-    // One press, one haptic: a modal surface is arriving.
+  void _openPay(BuildContext context, DuesEntry e) {
+    // One press, one haptic: a modal surface is arriving. The sheet pre-fills
+    // what the member owes *now* (the instalments he is behind on), saves the
+    // receipt, confirms it and refreshes every view that shows this member's
+    // money — this feed included — so nothing happens here on the way back.
     Haptics.sheet();
-    showAppSheet<void>(
+    showPaySheet(
       context,
-      builder: (_) => RenewSheet(
-        gymId: e.member.gymId,
-        memberId: e.member.id,
-        current: e.current,
-      ),
-    ).then((_) => invalidateDuesViews(ref));
+      gymId: e.member.gymId,
+      memberId: e.member.id,
+      pending: e.pending,
+      dueNow: e.tab.dueNow,
+    );
   }
 }
 
-/// Member initials centred in the ring: the ring says how far through the
-/// period the member is, the initials say who.
+/// Member initials centred in the ring: the ring says how much of the tab is
+/// paid, the initials say who.
 class _MemberInitials extends StatelessWidget {
   const _MemberInitials({required this.name});
 

@@ -1,106 +1,66 @@
-/// Supabase data layer for the Home dues feed (DESIGN.md §2/§3).
+/// Supabase data layer for the Home dues feed.
 ///
-/// Query shape (single round trip, RLS owner-scoped via gyms):
+/// The feed is derived, not stored: one row per member whose tab has money
+/// outstanding or a deadline in play, built from their stretches + payments via
+/// `computeTab` (`members/domain/member_money.dart`). Nothing is written at a
+/// cycle boundary — money accrues per day.
+///
+/// Query shape (two batched reads, RLS owner-scoped via gyms):
 ///
 /// ```sql
 /// -- 1. members of the selected gym(s)
 /// select id, gym_id, name, phone, note from members
 ///   where gym_id = :gym           -- one branch
 ///      or gym_id in (:g1,:g2,…)   -- All gyms branch
-/// -- 2. subscription rows joined to member + plan, ordered so the client
-/// --    can resolve current = first row per member (ADR-0001)
-/// select id, gym_id, member_id, plan_id, start_date, expiry_date,
-///        member:members!inner(id, gym_id, name, phone, note),
-///        plan:plans(name, amount, duration_days)
-///   from memberships
-///   where member_id in (:ids…)
-///   order by member_id asc, expiry_date desc
+/// -- 2. stretch + payment rows of those members, grouped client-side
+/// select id, gym_id, member_id, plan_id, price, duration_days, start_date,
+///        ended_on, end_reason, plan:plans(name)
+///   from memberships where member_id in (:ids…) order by start_date asc
+/// select id, member_id, amount, paid_on, note
+///   from payments where member_id in (:ids…) order by paid_on desc
 /// ```
 ///
-/// Implemented with postgrest-builder calls (`inFilter` + double `order`);
-/// the index `memberships_member_expiry_idx (member_id, expiry_date desc)`
-/// covers the ordering. Members with no rows still appear (bucket overdue).
+/// Cancelled members never reach the feed (their arrears live on their record);
+/// they still appear in the members list.
 library;
 
-import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../members/data/members_repository.dart';
+import '../../members/domain/member_money.dart';
 import '../../members/models/member.dart';
+import '../../members/models/payment.dart';
 
-/// One dues card: member + resolved current subscription (latest expiry).
-///
-/// [current] is null when the member has no subscription rows yet.
+/// One dues card: member + computed money tab + the stretch in force.
 class DuesEntry {
   const DuesEntry({
     required this.member,
-    required this.current,
+    required this.tab,
+    this.inForce,
     this.gymName,
   });
 
   final Member member;
-  final Subscription? current;
+  final MemberTab tab;
+
+  /// The stretch covering today, `null` when the member has none in force.
+  final Subscription? inForce;
 
   /// Gym display name for the All-gyms feed; null on single-gym scope.
   final String? gymName;
 
-  DueBucket get bucket => DueBucket.fromExpiry(current?.expiryDate);
+  DueBucket get bucket => tab.bucket;
 
-  /// Whole days from [today] to expiry; null when no subscription rows.
-  int? daysToExpiry({DateTime? today}) => current?.daysToExpiry(today: today);
+  /// `pending` when he owes, negative when the balance is an advance.
+  int get pending => tab.pending;
+  DateTime? get nextDeadline => tab.nextDeadline;
+  DateTime? get missedDeadline => tab.missedDeadline;
 
-  /// Due status in the owner's words (`docs/voice.md` rule 4): relative while
-  /// the date is close (`due in 3 days`, `expired 12 days ago`), absolute
-  /// otherwise (`12 Mar`). `No subscription yet` when the member has no
-  /// membership row at all.
-  String dueLine({DateTime? today}) {
-    final c = current;
-    if (c == null) return 'No subscription yet';
-    final days = c.daysToExpiry(today: today);
-    if (days == 0) return 'due today';
-    if (days == 1) return 'due tomorrow';
-    if (days == -1) return 'expired yesterday';
-    if (days < 0) {
-      final ago = -days;
-      return ago <= _relativeDays
-          ? 'expired $ago days ago'
-          : 'expired ${_shortDate(c.expiryDate)}';
-    }
-    return days <= _relativeDays
-        ? 'due in $days days'
-        : 'due ${_shortDate(c.expiryDate)}';
-  }
+  /// Name of the plan in force, `null` when there is none (or it is gone).
+  String? get planName => inForce?.planName;
 
-  /// `₹amount` with Indian grouping, or `—` when no plan is attached.
-  String get amountLabel {
-    final amount = current?.planAmount;
-    if (amount == null) return '—';
-    return rupeeLabel(amount.toDouble(), whole: amount.remainder(1) == 0);
-  }
 }
 
-/// Past this many days from today a caption names the date instead of
-/// counting days (`docs/voice.md` rule 4).
-const int _relativeDays = 14;
-
-/// `12 Mar`.
-String _shortDate(DateTime d) => DateFormat('d MMM').format(d);
-
-final NumberFormat _inrWhole = NumberFormat.decimalPattern('en_IN')
-  ..minimumFractionDigits = 0
-  ..maximumFractionDigits = 0;
-final NumberFormat _inrPaise = NumberFormat.decimalPattern('en_IN')
-  ..minimumFractionDigits = 2
-  ..maximumFractionDigits = 2;
-
-/// `₹` label with Indian digit grouping — `₹1,50,000`, or `₹499.50` for a
-/// fractional amount.
-///
-/// [whole] fixes the precision to the *target*, so a rolling label
-/// ([AnimatedAmount]) keeps one shape from its first frame to its last.
-String rupeeLabel(double amount, {bool whole = true}) => whole
-    ? '₹${_inrWhole.format(amount)}'
-    : '₹${_inrPaise.format(amount)}';
-
-/// Feed repository: members + current subscriptions join + renew.
+/// Feed repository: members + their stretches + payments, shaped into cards.
 class DuesRepository {
   const DuesRepository(this._client);
 
@@ -108,83 +68,48 @@ class DuesRepository {
 
   static const _memberCols = 'id,gym_id,name,phone,note';
 
-  /// Embed fragments for the subscription join.
-  static const _select =
-      'id,gym_id,member_id,plan_id,start_date,expiry_date,'
-      'member:members!inner(id,gym_id,name,phone,note),'
-      'plan:plans(name,amount,duration_days)';
-
-  /// Members of [gymIds] with their current subscription resolved
-  /// client-side from one ordered query (latest expiry per member wins).
+  /// Members of [gymIds] with pending money or a deadline in play.
+  ///
+  /// Sort happens in the provider (Overdue → Due soon → Active).
   Future<List<DuesEntry>> watchDues({required List<String> gymIds}) async {
     if (gymIds.isEmpty) return const [];
     final members = await _membersOf(gymIds);
     if (members.isEmpty) return const [];
-    final byId = {for (final m in members) m.id: m};
+    final ids = [for (final m in members) m.id];
+    final stretchesFuture = _stretchesOf(ids);
+    final paymentsFuture = _paymentsOf(ids);
     final gymNames = await _gymNames(gymIds);
-    final latest = await _latestByMember(byId.keys.toList(growable: false));
-    return members
-        .map((m) => DuesEntry(
-              member: m,
-              current: latest[m.id],
-              gymName: gymIds.length > 1 ? gymNames[m.gymId] : null,
-            ))
-        .toList(growable: false);
+    final stretches = await stretchesFuture;
+    final payments = await paymentsFuture;
+    final allGyms = gymIds.length > 1;
+    final today = DateTime.now();
+
+    final out = <DuesEntry>[];
+    for (final m in members) {
+      final memberStretches = stretches[m.id] ?? const <Subscription>[];
+      // Cancelled members leave the feed; their arrears stay on their record.
+      if (isCancelled(memberStretches, today)) continue;
+      final tab = computeTab(
+        stretches: memberStretches,
+        payments: payments[m.id] ?? const <Payment>[],
+        today: today,
+      );
+      final deadlineInPlay =
+          tab.nextDeadline != null || tab.missedDeadline != null;
+      if (tab.pending <= 0 && !deadlineInPlay) continue;
+      out.add(DuesEntry(
+        member: m,
+        tab: tab,
+        inForce: inForceStretch(memberStretches, today),
+        gymName: allGyms ? gymNames[m.gymId] : null,
+      ));
+    }
+    return out;
   }
 
   /// Single-gym convenience over [watchDues].
   Future<List<DuesEntry>> watchDuesForGym(String gymId) =>
       watchDues(gymIds: [gymId]);
-
-  /// Append-only renewal (ADR-0001): insert a new subscription row.
-  ///
-  /// [planId]/[durationDays] come from the plan picked in the Renew sheet.
-  /// Start = old expiry when still active, else today; expiry = start +
-  /// [durationDays]. Never updates history rows.
-  Future<Subscription> renew({
-    required String gymId,
-    required String memberId,
-    required String planId,
-    required int durationDays,
-    DateTime? today,
-  }) async {
-    final now = today ?? DateTime.now();
-    final day = DateTime(now.year, now.month, now.day);
-    final rows = await _client
-        .from('memberships')
-        .select('expiry_date')
-        .eq('member_id', memberId)
-        .order('expiry_date', ascending: false)
-        .limit(1) as List<dynamic>;
-    DateTime? oldExpiry;
-    if (rows.isNotEmpty) {
-      oldExpiry = DateTime.parse(
-        (rows.first as Map)['expiry_date'] as String,
-      );
-    }
-    final oldDay = oldExpiry == null
-        ? null
-        : DateTime(oldExpiry.year, oldExpiry.month, oldExpiry.day);
-    final start =
-        (oldDay != null && !oldDay.isBefore(day)) ? oldDay : day;
-    final expiry = start.add(Duration(days: durationDays));
-    String iso(DateTime d) =>
-        '${d.year.toString().padLeft(4, '0')}-'
-        '${d.month.toString().padLeft(2, '0')}-'
-        '${d.day.toString().padLeft(2, '0')}';
-    final row = await _client
-        .from('memberships')
-        .insert({
-          'gym_id': gymId,
-          'member_id': memberId,
-          'plan_id': planId,
-          'start_date': iso(start),
-          'expiry_date': iso(expiry),
-        })
-        .select(_select)
-        .single();
-    return Subscription.fromJson(Map<String, dynamic>.from(row));
-  }
 
   Future<List<Member>> _membersOf(List<String> gymIds) async {
     final rows = await _client
@@ -211,28 +136,36 @@ class DuesRepository {
     return out;
   }
 
-  /// Latest-expiry subscription per member id.
-  ///
-  /// Rows arrive ordered (member_id asc, expiry desc) so the first row
-  /// per member is its current subscription; a Map putIfAbsent keeps it.
-  Future<Map<String, Subscription>> _latestByMember(
-    List<String> ids,
+  /// Stretches of many members, grouped by member, oldest start first.
+  Future<Map<String, List<Subscription>>> _stretchesOf(
+    List<String> memberIds,
   ) async {
     final rows = await _client
         .from('memberships')
-        .select(_select)
-        .inFilter('member_id', ids)
-        .order('member_id', ascending: true)
-        .order('expiry_date', ascending: false) as List<dynamic>;
-    final out = <String, Subscription>{};
+        .select(kSubscriptionCols)
+        .inFilter('member_id', memberIds)
+        .order('start_date', ascending: true) as List<dynamic>;
+    final out = <String, List<Subscription>>{};
     for (final r in rows) {
-      final json = Map<String, dynamic>.from(r as Map);
-      final embedded = json['member'];
-      final hasMember = embedded is Map<String, dynamic> ||
-          (embedded is List && embedded.isNotEmpty);
-      if (!hasMember) continue;
-      final s = Subscription.fromJson(json);
-      out.putIfAbsent(s.memberId, () => s);
+      final s = Subscription.fromJson(Map<String, dynamic>.from(r as Map));
+      (out[s.memberId] ??= <Subscription>[]).add(s);
+    }
+    return out;
+  }
+
+  /// Payments of many members, grouped by member, newest first.
+  Future<Map<String, List<Payment>>> _paymentsOf(
+    List<String> memberIds,
+  ) async {
+    final rows = await _client
+        .from('payments')
+        .select(kPaymentCols)
+        .inFilter('member_id', memberIds)
+        .order('paid_on', ascending: false) as List<dynamic>;
+    final out = <String, List<Payment>>{};
+    for (final r in rows) {
+      final p = Payment.fromJson(Map<String, dynamic>.from(r as Map));
+      (out[p.memberId] ??= <Payment>[]).add(p);
     }
     return out;
   }

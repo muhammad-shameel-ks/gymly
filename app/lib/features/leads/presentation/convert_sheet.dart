@@ -4,7 +4,7 @@
 /// Duplicate phone → surfaces the existing member id so the caller can
 /// open the existing member instead.
 ///
-/// Motion: sheet timing from [AppTransitions.sheetController]; success fires one
+/// Motion: sheet timing from `showAppSheet`'s budget; success fires one
 /// decisive confirmation beat (≤500 ms, once) before the sheet hands back, so
 /// the list row can settle into its joined state.
 library;
@@ -18,6 +18,7 @@ import '../../../core/motion/motion.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/app_sheet.dart';
+import '../../members/widgets/rupee_field.dart';
 import '../application/leads_providers.dart';
 import '../data/inquiries_repository.dart';
 import '../data/inquiry.dart';
@@ -30,19 +31,11 @@ typedef ConvertedCallback = void Function(
 Future<void> showConvertSheet(BuildContext context, Inquiry inquiry,
     {ConvertedCallback? onConverted}) async {
   Haptics.sheet();
-  final controller = AppTransitions.sheetController(
-    Navigator.of(context),
+  await showAppSheet<void>(
+    context,
     reduceMotion: AppMotionConfig.reduceMotionOf(context),
+    builder: (_) => _ConvertForm(inquiry: inquiry, onConverted: onConverted),
   );
-  try {
-    await showAppSheet<void>(
-      context,
-      transitionAnimationController: controller,
-      builder: (_) => _ConvertForm(inquiry: inquiry, onConverted: onConverted),
-    );
-  } finally {
-    controller.dispose();
-  }
 }
 
 class _ConvertForm extends ConsumerStatefulWidget {
@@ -57,12 +50,14 @@ class _ConvertForm extends ConsumerStatefulWidget {
 
 class _ConvertFormState extends ConsumerState<_ConvertForm> {
   String? _planId; // null = member only, no first subscription.
+  final _received = TextEditingController();
   Timer? _closeTimer;
   bool _converted = false;
 
   @override
   void dispose() {
     _closeTimer?.cancel();
+    _received.dispose();
     super.dispose();
   }
 
@@ -70,11 +65,13 @@ class _ConvertFormState extends ConsumerState<_ConvertForm> {
     // Captured before the await so the confirmation survives the sheet's pop.
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
+    final received = rupeesOf(_received.text);
     try {
       final memberId =
           await ref.read(leadsControllerProvider.notifier).convert(
                 widget.inquiry,
                 planId: _planId,
+                firstPayment: (received ?? 0) > 0 ? received : null,
               );
       if (!mounted || memberId == null) return;
       Haptics.success();
@@ -187,7 +184,10 @@ class _ConvertFormState extends ConsumerState<_ConvertForm> {
                               onSelected: (_) {
                                 if (_planId == null) return;
                                 Haptics.select();
-                                setState(() => _planId = null);
+                                setState(() {
+                                  _planId = null;
+                                  _received.text = '';
+                                });
                               },
                             ),
                           ),
@@ -214,7 +214,12 @@ class _ConvertFormState extends ConsumerState<_ConvertForm> {
                                 onSelected: (_) {
                                   if (_planId == p.id) return;
                                   Haptics.select();
-                                  setState(() => _planId = p.id);
+                                  setState(() {
+                                    _planId = p.id;
+                                    // The plan's price, received in full,
+                                    // unless the owner changes it.
+                                    _received.text = '${p.amount.round()}';
+                                  });
                                 },
                               ),
                             ),
@@ -222,6 +227,15 @@ class _ConvertFormState extends ConsumerState<_ConvertForm> {
                       );
                     },
                   ),
+                  if (_planId != null) ...[
+                    const SizedBox(height: AppSpace.sm),
+                    RupeeField(
+                      controller: _received,
+                      label: 'Received now',
+                      enabled: !converting,
+                      helperText: 'Leave 0 if he paid nothing now.',
+                    ),
+                  ],
                   const SizedBox(height: AppSpace.md),
                   TapScale(
                     // Press feedback only; the convert carries success/error.

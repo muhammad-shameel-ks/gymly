@@ -1,16 +1,22 @@
-/// Riverpod providers for the members slice (dependency-free).
+/// Riverpod providers for the members slice.
 ///
-/// Only `flutter_riverpod` + `supabase_flutter` imports. Foundation may
-/// later replace [supabaseClientProvider] with the shared client; the
-/// repository + list/detail providers below keep their names.
+/// Only `flutter_riverpod` + `supabase_flutter` imports plus the Home dues
+/// slice (whose feed shows the same money picture and is invalidated with this
+/// slice's views). Foundation may later replace [supabaseClientProvider] with
+/// the shared client; the repository + list/detail providers below keep their
+/// names.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../home/data/dues_providers.dart' show invalidateDuesViews;
 import '../data/members_repository.dart';
+import '../domain/member_money.dart';
 import '../models/member.dart';
+import '../models/member_detail.dart';
+import '../models/payment.dart';
 
 final _inr = NumberFormat.decimalPattern('en_IN');
 
@@ -31,20 +37,63 @@ final membersRepositoryProvider = Provider<MembersRepository>(
 /// List query key: gym scope + search text.
 typedef MemberQuery = ({String gymId, String query});
 
-/// Search-first member list with resolved current subscriptions.
+/// Search-first member list, each row carrying its resolved money tab so the
+/// list can show the pending amount without another round trip.
 final membersListProvider = FutureProvider.family<List<MemberWithDues>,
     MemberQuery>(
-  (ref, q) => ref
-      .watch(membersRepositoryProvider)
-      .listMembers(gymId: q.gymId, query: q.query),
+  (ref, q) async {
+    final repo = ref.watch(membersRepositoryProvider);
+    final members = await repo.listMembers(gymId: q.gymId, query: q.query);
+    if (members.isEmpty) return const <MemberWithDues>[];
+    final ids = [for (final m in members) m.id];
+    final stretches = await repo.stretchesByMember(ids);
+    final payments = await repo.paymentsByMember(ids);
+    final today = DateTime.now();
+    return [
+      for (final m in members)
+        MemberWithDues(
+          member: m,
+          inForce: inForceStretch(
+            stretches[m.id] ?? const <Subscription>[],
+            today,
+          ),
+          tab: computeTab(
+            stretches: stretches[m.id] ?? const <Subscription>[],
+            payments: payments[m.id] ?? const <Payment>[],
+            today: today,
+          ),
+        ),
+    ];
+  },
   name: 'membersList',
 );
 
-/// Detail payload: member + current subscription + history (desc).
+/// Detail payload: member + stretches + payments + computed tab.
 final memberDetailProvider =
-    FutureProvider.family<MemberWithDues, String>(
-  (ref, memberId) =>
-      ref.watch(membersRepositoryProvider).memberDetail(memberId),
+    FutureProvider.family<MemberDetail, String>(
+  (ref, memberId) async {
+    final repo = ref.watch(membersRepositoryProvider);
+    final memberFuture = repo.memberById(memberId);
+    final stretchesFuture = repo.stretchesFor(memberId);
+    final paymentsFuture = repo.paymentsFor(memberId);
+    final member = await memberFuture;
+    final stretches = await stretchesFuture;
+    final payments = await paymentsFuture;
+    final today = DateTime.now();
+    return MemberDetail(
+      member: member,
+      stretches: stretches,
+      payments: payments,
+      tab: computeTab(
+        stretches: stretches,
+        payments: payments,
+        today: today,
+      ),
+      inForce: inForceStretch(stretches, today),
+      queuedStretch: queuedStretchOf(stretches, today),
+      cancelled: isCancelled(stretches, today),
+    );
+  },
   name: 'memberDetail',
 );
 
@@ -74,7 +123,7 @@ class PlanOption {
       ' · $durationDays ${durationDays == 1 ? 'day' : 'days'}';
 }
 
-/// Plans of one gym for the create/renew pickers.
+/// Plans of one gym for the create/subscribe/change pickers.
 final plansForGymProvider =
     FutureProvider.family<List<PlanOption>, String>(
   (ref, gymId) async {
@@ -92,8 +141,18 @@ final plansForGymProvider =
   name: 'membersPlansForGym',
 );
 
-/// Invalidate list + detail after any write.
-void invalidateMemberViews(WidgetRef ref, {required String gymId, String? memberId}) {
+/// Invalidate every view a member/stretch/payment write can change: the
+/// members list, the member's record, and the Home dues feed that shows the
+/// same money.
+///
+/// Callers pass [memberId] when the write touched one member's record; the
+/// list and the feed are always refreshed.
+void invalidateMemberViews(
+  WidgetRef ref, {
+  required String gymId,
+  String? memberId,
+}) {
   ref.invalidate(membersListProvider);
   if (memberId != null) ref.invalidate(memberDetailProvider(memberId));
+  invalidateDuesViews(ref);
 }

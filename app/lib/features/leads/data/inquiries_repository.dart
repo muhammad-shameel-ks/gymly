@@ -1,12 +1,13 @@
 /// Supabase data layer for inquiries (`inquiries` table).
 ///
 /// RLS is owner-via-gym; all queries scope by `gym_id`.
-/// Convert flow: create member (+ optional first subscription) then
+/// Convert flow: create member (+ optional first stretch from a plan) then
 /// mark the inquiry `joined` linking `member_id`.
 library;
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../members/data/members_repository.dart' show MembersRepository;
 import 'inquiry.dart';
 import 'lead_validators.dart';
 
@@ -72,12 +73,15 @@ class InquiriesRepository {
   /// 1. Insert into `members` (name/phone/note from inquiry).
   ///    On unique-violation (duplicate phone in gym) throws
   ///    [DuplicateMemberException] with the existing member id.
-  /// 2. Optionally insert a first `memberships` row from [planId]:
-  ///    start = today, expiry = today + plan.duration_days.
+  /// 2. Optionally start a first stretch from [planId] today, with an optional
+  ///    [priceOverride] and the amount received now ([firstPayment]), through
+  ///    the members repository so convert and the member form share one path.
   /// 3. Mark inquiry `joined` with `member_id`.
   Future<String> convert({
     required Inquiry inquiry,
     String? planId,
+    int? priceOverride,
+    int? firstPayment,
   }) async {
     String memberId;
     try {
@@ -106,22 +110,17 @@ class InquiriesRepository {
     }
 
     if (planId != null) {
-      final plan = await _client
-          .from('plans')
-          .select('duration_days')
-          .eq('id', planId)
-          .single();
-      final days = ((plan as Map)['duration_days'] as num).toInt();
-      final now = DateTime.now();
-      final start = DateTime(now.year, now.month, now.day);
-      final expiry = start.add(Duration(days: days));
-      await _client.from('memberships').insert({
-        'gym_id': inquiry.gymId,
-        'member_id': memberId,
-        'plan_id': planId,
-        'start_date': start.toIso8601String().substring(0, 10),
-        'expiry_date': expiry.toIso8601String().substring(0, 10),
-      });
+      // Same path as the member form: the plan's price/duration are copied
+      // onto the stretch, with an optional price override and the amount
+      // received today.
+      await MembersRepository(_client).startSubscription(
+        gymId: inquiry.gymId,
+        memberId: memberId,
+        planId: planId,
+        startDate: DateTime.now(),
+        priceOverride: priceOverride,
+        firstPayment: firstPayment,
+      );
     }
 
     await setStatus(inquiry.id, InquiryStatus.joined, memberId: memberId);

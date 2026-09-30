@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_palette.dart';
 import '../theme/app_tokens.dart';
+import 'gymly_mark.dart';
 
 /// Two-tone `Gymly` wordmark: `Gym` in [AppPalette.text], `ly` in
 /// [AppPalette.accentText].
@@ -38,6 +39,37 @@ class GymlyWordmark extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The mark above the wordmark — what the app shows where it introduces itself.
+///
+/// [GymlyMark] is painted from palette tokens, so the lockup is correct in both
+/// themes; [crossAxisAlignment] lets the launch surface centre it while the auth
+/// hero keeps it flush with the form below.
+class GymlyBrandLockup extends StatelessWidget {
+  const GymlyBrandLockup({
+    super.key,
+    this.markSize = 64,
+    this.crossAxisAlignment = CrossAxisAlignment.start,
+  });
+
+  /// Width and height of the square mark.
+  final double markSize;
+
+  final CrossAxisAlignment crossAxisAlignment;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: crossAxisAlignment,
+      children: [
+        GymlyMark(size: markSize),
+        const SizedBox(height: AppSpace.sm),
+        const GymlyWordmark(),
+      ],
     );
   }
 }

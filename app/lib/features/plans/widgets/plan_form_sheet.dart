@@ -352,7 +352,7 @@ class _ArchiveBlockWarning extends StatelessWidget {
           ),
           const SizedBox(height: AppSpace.sm),
           Text(
-            "It can't be archived. Keep it, so past renewals stay on record.",
+            "It can't be archived. Keep it, so past subscriptions stay on record.",
             style: AppType.body.copyWith(color: palette.secondary),
           ),
         ],

@@ -9,7 +9,7 @@
 ///   [select] = moving through discrete values (picker, segmented control, chip);
 ///   [impact] = a control was pressed / snapped (light), a surface arrived
 ///   (medium), a destructive or heavy commitment (heavy);
-///   [success] = save / renew / convert committed;
+///   [success] = save / payment / convert committed;
 ///   [error] = validation failed, destructive action refused;
 ///   [sheet] = a modal surface came up or went away.
 /// - **Device settings win.** All of these route through Flutter's
@@ -67,7 +67,7 @@ abstract final class Haptics {
     }
   }
 
-  /// Committed: member saved, membership renewed, inquiry converted.
+  /// Committed: member saved, payment recorded, inquiry converted.
   static void success() {
     if (!enabled) return;
     HapticFeedback.successNotification();

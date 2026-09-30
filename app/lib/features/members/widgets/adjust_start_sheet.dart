@@ -1,29 +1,29 @@
-/// Adjust start date sheet: correct the active subscription's dates in place
-/// (ADR-0002 — **not** a renewal).
+/// Adjust start date sheet: correct the start date of the stretch in force, in
+/// place (ADR-0002, amended by ADR-0003).
 ///
-/// Owners migrate members who joined before the app did, so the entered date —
-/// and with it the due date — is wrong. Renewal stays append-only (ADR-0001);
-/// this rewrites the active `memberships` row, so the sheet says what changes
-/// before saving, previews the resulting due date live, and refuses a date the
-/// plan cannot back (no period length) or one absurdly far ahead. Chrome is the
-/// shared [AppSheet], the picker is the themed Material one, and the CTA
-/// carries its busy state in-button.
+/// Owners migrate members who joined before the app did, so the entered day is
+/// often wrong. A correction is the one in-place edit a stretch allows: it
+/// rewrites `start_date` and nothing else. There is no stored end date to
+/// recompute and no plan length to lean on — the clock that bills him and the
+/// monthly deadlines both derive from that date at read time, which is why the
+/// sheet says the new day and lets the record show the rest.
+///
+/// The day can be any real past start (the picker never offers tomorrow): an
+/// entered start date is today or earlier by definition. Chrome is the shared
+/// [AppSheet], the picker is [DayField]'s, and the CTA commits with the success
+/// haptic plus `Start date set to 12 Sep`.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../../core/motion/motion.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/app_sheet.dart';
 import '../providers/members_providers.dart';
-
-final _dayMonth = DateFormat('d MMM');
-
-/// How far ahead a start date may sit before it is read as a typo.
-const _maxAheadYears = 2;
+import 'day_field.dart';
+import 'money_text.dart';
 
 class AdjustStartSheet extends ConsumerStatefulWidget {
   const AdjustStartSheet({
@@ -32,21 +32,16 @@ class AdjustStartSheet extends ConsumerStatefulWidget {
     required this.memberId,
     required this.membershipId,
     required this.currentStart,
-    required this.durationDays,
   });
 
   final String gymId;
   final String memberId;
 
-  /// The active subscription row to rewrite (a member's latest-expiry row).
+  /// The stretch row to rewrite (the one in force).
   final String membershipId;
 
   /// What the row says today, so the owner sees what is being replaced.
   final DateTime currentStart;
-
-  /// Period length of the row's plan, mirrored from the read embed. The
-  /// repository re-reads `plans.duration_days` authoritatively when saving.
-  final int durationDays;
 
   @override
   ConsumerState<AdjustStartSheet> createState() => _AdjustStartSheetState();
@@ -56,113 +51,21 @@ class _AdjustStartSheetState extends ConsumerState<AdjustStartSheet> {
   late DateTime _start;
   bool _saving = false;
 
+  static DateTime _dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
+
   @override
   void initState() {
     super.initState();
     _start = _dayOf(widget.currentStart);
   }
 
-  static DateTime _dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
-
-  String _fmt(DateTime d) => _dayMonth.format(d);
-
   DateTime get _today => _dayOf(DateTime.now());
 
   /// Old members can predate the app by years.
   DateTime get _first => DateTime(2000);
 
-  /// A start date years ahead is a typo, not a migration.
-  DateTime get _last =>
-      DateTime(_today.year + _maxAheadYears, _today.month, _today.day);
-
-  DateTime get _expiry => _start.add(Duration(days: widget.durationDays));
-
-  /// Refusal copy for the current choice, or null when it can be saved.
-  ///
-  /// The picker cannot express a plan with no length, so the guard is repeated
-  /// here; the bounds are re-checked too, so the CTA never writes a date the
-  /// picker could not have produced.
-  String? get _refusal {
-    if (widget.durationDays < 1) {
-      return 'This plan has no duration. Set one in Plans, then try again.';
-    }
-    if (_start.isAfter(_last)) {
-      return 'Pick a start date within $_maxAheadYears years.';
-    }
-    if (!_expiry.isAfter(_start)) {
-      return 'Pick a start date that ends after it starts.';
-    }
-    return null;
-  }
-
-  /// Opens the themed Material date picker inside the app's dialog chrome.
-  Future<void> _pickDate() async {
-    Haptics.sheet();
-    final initial = _start.isBefore(_first)
-        ? _first
-        : (_start.isAfter(_last) ? _last : _start);
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: _first,
-      lastDate: _last,
-      helpText: 'Start date',
-      cancelText: 'Cancel',
-      confirmText: 'Set date',
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(datePickerTheme: _pickerTheme(context)),
-        child: child!,
-      ),
-    );
-    if (picked == null || !mounted) return;
-    Haptics.select();
-    setState(() => _start = _dayOf(picked));
-  }
-
-  /// The picker, wearing this app's surface, radius, type and accent instead
-  /// of the framework's grey M3 defaults.
-  DatePickerThemeData _pickerTheme(BuildContext context) {
-    final p = context.palette;
-    final onDay = WidgetStateProperty.resolveWith<Color?>(
-      (states) => states.contains(WidgetState.selected) ? p.onAccent : p.text,
-    );
-    final dayFill = WidgetStateProperty.resolveWith<Color?>(
-      (states) => states.contains(WidgetState.selected) ? p.accent : null,
-    );
-    return DatePickerThemeData(
-      backgroundColor: p.surface,
-      surfaceTintColor: Colors.transparent,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadius.sheet),
-        side: BorderSide(color: p.border),
-      ),
-      headerBackgroundColor: p.surface,
-      headerForegroundColor: p.text,
-      headerHelpStyle: AppType.caption.copyWith(color: p.secondary),
-      dividerColor: p.border,
-      weekdayStyle: AppType.caption.copyWith(color: p.secondary),
-      dayStyle: AppType.body.copyWith(color: p.text),
-      dayForegroundColor: onDay,
-      dayBackgroundColor: dayFill,
-      todayForegroundColor: WidgetStatePropertyAll<Color?>(p.accentText),
-      todayBorder: BorderSide(color: p.accentText),
-      yearStyle: AppType.body.copyWith(color: p.text),
-      yearForegroundColor: onDay,
-      yearBackgroundColor: dayFill,
-      cancelButtonStyle: TextButton.styleFrom(foregroundColor: p.accentText),
-      confirmButtonStyle: TextButton.styleFrom(foregroundColor: p.accentText),
-    );
-  }
-
   Future<void> _save() async {
-    final refusal = _refusal;
-    if (refusal != null) {
-      Haptics.error();
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(refusal)));
-      return;
-    }
+    if (_start.isAfter(_today)) return;
     setState(() => _saving = true);
     try {
       await ref.read(membersRepositoryProvider).correctStartDate(
@@ -173,12 +76,9 @@ class _AdjustStartSheetState extends ConsumerState<AdjustStartSheet> {
           gymId: widget.gymId, memberId: widget.memberId);
       Haptics.success();
       if (!mounted) return;
-      // Built before the pop so the confirmation outlives this route; the
-      // messenger is the app-level one, so the SnackBar lands on the screen
-      // underneath.
-      final message =
-          'Start date set to ${_fmt(_start)} · due ${_fmt(_expiry)}';
+      // Built before the pop so the confirmation outlives this route.
       final messenger = ScaffoldMessenger.of(context);
+      final message = 'Start date set to ${shortDate(_start)}';
       Navigator.of(context).pop();
       messenger.showSnackBar(SnackBar(content: Text(message)));
     } catch (_) {
@@ -201,11 +101,10 @@ class _AdjustStartSheetState extends ConsumerState<AdjustStartSheet> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final caption = TextStyle(color: palette.secondary, fontSize: 13);
     return AppSheet(
       title: 'Adjust start date',
       subtitle: 'Corrects the current subscription in place. '
-          'The old dates are replaced.',
+          'The old start date is replaced.',
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -213,39 +112,28 @@ class _AdjustStartSheetState extends ConsumerState<AdjustStartSheet> {
           StaggeredEntrance(
             index: 0,
             child: Text(
-              'Current start date ${_fmt(widget.currentStart)}',
-              style: caption,
+              'Current start date ${shortDate(widget.currentStart)}',
+              style: AppType.caption.copyWith(color: palette.secondary),
             ),
           ),
           const SizedBox(height: AppSpace.sm),
           StaggeredEntrance(
             index: 1,
-            child: TapScale(
+            child: DayField(
+              label: 'Start date',
+              day: _start,
+              first: _first,
+              // A member cannot have started tomorrow.
+              last: _today,
               enabled: !_saving,
-              // The picker fires Haptics.sheet() when it comes up.
-              enableHaptic: false,
-              child: InkWell(
-                onTap: _saving ? null : _pickDate,
-                borderRadius: BorderRadius.circular(AppRadius.card),
-                child: InputDecorator(
-                  decoration: InputDecoration(
-                    labelText: 'Start date',
-                    suffixIcon: const Icon(Icons.calendar_today, size: 20),
-                    suffixIconColor: palette.secondary,
-                  ),
-                  child: Text(
-                    _fmt(_start),
-                    style: AppType.body.copyWith(color: palette.text),
-                  ),
-                ),
-              ),
+              onChanged: (d) => setState(() => _start = d),
             ),
           ),
           const SizedBox(height: AppSpace.sm),
           StaggeredEntrance(
             index: 2,
             child: Text(
-              '${_fmt(_start)} → due ${_fmt(_expiry)}',
+              'Starts ${shortDate(_start)}',
               style: AppType.body.copyWith(color: palette.text),
             ),
           ),

@@ -25,9 +25,15 @@
 /// states and its CTA — and fires [Haptics.sheet] at the call site, because one
 /// gesture gets one haptic (`core/motion/PROTOCOL.md`).
 ///
-/// Timing stays with the caller: `AppTransitions.sheetController(vsync,
-/// reduceMotion: …)` is accepted and forwarded, and the caller still owns and
-/// disposes it.
+/// Timing is a token, not a controller: [showAppSheet] sets the sheet's
+/// durations from `MotionSpec.sheet` (collapsed to `MotionSpec.crossFade` under
+/// Reduce Motion) through the framework's `sheetAnimationStyle`, and the
+/// **route keeps its own animation controller**. A controller made by the
+/// caller is animated by the `vsync` it was created with — and a sheet opened
+/// from a tab resolves `Navigator.of(context)` to that tab's *branch*
+/// navigator, while the sheet itself is pushed on the *root* one, so the pop
+/// never ticks and the sheet can be neither tapped away, dragged down nor
+/// back-dismissed. Never hand a sheet a foreign controller.
 library;
 
 import 'dart:math' as math;
@@ -55,8 +61,8 @@ import '../theme/app_tokens.dart';
 /// [isDismissible] keeps barrier-tap dismissal, [enableDrag] keeps drag-down
 /// (both default on; a blocking sheet turns them off). [isScrollControlled]
 /// defaults to on and every call site leaves it there — [AppSheet]'s keyboard
-/// handling assumes a full-height sheet. [transitionAnimationController] is
-/// forwarded untouched: the caller owns and disposes it.
+/// handling assumes a full-height sheet. [reduceMotion] collapses the sheet's
+/// travel to the cross-fade budget; pass `AppMotionConfig.reduceMotionOf(context)`.
 ///
 /// Fires no haptic: the control that was pressed fires `Haptics.sheet()` (one
 /// haptic per gesture), and the caller keeps its own `await` /
@@ -67,7 +73,7 @@ Future<T?> showAppSheet<T>(
   bool isDismissible = true,
   bool enableDrag = true,
   bool isScrollControlled = true,
-  AnimationController? transitionAnimationController,
+  bool reduceMotion = false,
 }) {
   final palette = context.palette;
   return showModalBottomSheet<T>(
@@ -85,7 +91,15 @@ Future<T?> showAppSheet<T>(
     // Keeps the sheet clear of the status bar; the bottom edge stays the
     // content's business, which is [AppSheet]'s job.
     useSafeArea: true,
-    transitionAnimationController: transitionAnimationController,
+    // Durations only: the framework builds the controller on this route's own
+    // navigator, so push, drag and pop all tick (see the library doc — a
+    // caller-made controller animated by another navigator's ticker leaves the
+    // sheet unable to close).
+    sheetAnimationStyle: AnimationStyle(
+      duration: reduceMotion ? MotionSpec.crossFade.duration : MotionSpec.sheet.duration,
+      reverseDuration:
+          reduceMotion ? MotionSpec.crossFade.reverse : MotionSpec.sheet.reverse,
+    ),
     // Palette-derived scrim: the dark `bg` dims a dark app, the light
     // `secondary` dims a light one. Never a hardcoded black.
     barrierColor: (palette.isDark ? palette.bg : palette.secondary)

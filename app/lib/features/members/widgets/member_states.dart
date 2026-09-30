@@ -107,7 +107,7 @@ class MemberEmpty extends StatelessWidget {
           Text(
             searching
                 ? 'Search another name or phone number.'
-                : 'Track dues and renewals for this gym.',
+                : 'Track dues and payments for this gym.',
             style: TextStyle(color: context.palette.secondary, fontSize: 16),
             textAlign: TextAlign.center,
           ),

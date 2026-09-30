@@ -58,10 +58,18 @@ final leadCountsProvider = Provider<Map<InquiryStatus, int>>((ref) {
 /// Minimal plan row for the convert plan-picker. Overridden by Plans slice
 /// or wired to Supabase in integration; default reads `plans` directly.
 class ConvertPlan {
-  const ConvertPlan(
-      {required this.id, required this.name, required this.amountDaysLabel});
+  const ConvertPlan({
+    required this.id,
+    required this.name,
+    required this.amount,
+    required this.amountDaysLabel,
+  });
   final String id;
   final String name;
+
+  /// Price in ₹ — pre-fills the amount received now with the new member.
+  final num amount;
+
   final String amountDaysLabel;
 }
 
@@ -78,6 +86,7 @@ final convertPlansProvider = FutureProvider<List<ConvertPlan>>((ref) async {
     return ConvertPlan(
       id: m['id'] as String,
       name: m['name'] as String,
+      amount: m['amount'] as num,
       amountDaysLabel: '${formatPlanAmount(m['amount'] as num)} · '
           '${durationLabel((m['duration_days'] as num).toInt())}',
     );
@@ -126,12 +135,19 @@ class LeadsController extends StateNotifier<AsyncValue<void>> {
   }
 
   /// Returns the new member id, or throws [DuplicateMemberException].
-  Future<String?> convert(Inquiry inquiry, {String? planId}) async {
+  ///
+  /// [firstPayment] (₹) is what the new member handed over with his first
+  /// stretch; the repository writes it as a payment row.
+  Future<String?> convert(
+    Inquiry inquiry, {
+    String? planId,
+    int? firstPayment,
+  }) async {
     state = const AsyncValue.loading();
     try {
       final memberId = await _ref
           .read(inquiriesRepositoryProvider)
-          .convert(inquiry: inquiry, planId: planId);
+          .convert(inquiry: inquiry, planId: planId, firstPayment: firstPayment);
       _ref.invalidate(inquiriesProvider);
       state = const AsyncValue.data(null);
       return memberId;

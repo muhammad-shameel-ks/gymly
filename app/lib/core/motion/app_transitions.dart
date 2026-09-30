@@ -163,24 +163,4 @@ abstract final class AppTransitions {
   /// Transition used for an app-owned [PageRoute] (and for desktop).
   static const PageTransitionsBuilder builder =
       AppSlideFadeTransitionsBuilder();
-
-  /// Controller for a modal sheet that must match the app's sheet budget.
-  ///
-  /// Pass to `showAppSheet(transitionAnimationController: …)` (which forwards
-  /// it to `showModalBottomSheet`); the caller owns it and must dispose it.
-  /// Under Reduce Motion the duration collapses to the cross-fade budget so
-  /// the sheet arrives without travel.
-  static AnimationController sheetController(
-    TickerProvider vsync, {
-    bool reduceMotion = false,
-  }) {
-    return AnimationController(
-      vsync: vsync,
-      duration: reduceMotion ? AppMotion.crossFade : MotionSpec.sheet.duration,
-      reverseDuration: reduceMotion
-          ? AppMotion.crossFade
-          : MotionSpec.sheet.reverse,
-      animationBehavior: AnimationBehavior.preserve,
-    );
-  }
 }

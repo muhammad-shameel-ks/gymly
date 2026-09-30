@@ -1,37 +1,45 @@
 /// `DueRing` — Gymly's one visual signature.
 ///
-/// A thin ring that encodes **how much of the current subscription period has
-/// elapsed**: empty the day a member renews, full on the expiry date. It makes
-/// "who is running out" legible at a glance in Member rows, the Member detail
-/// header and any list that triages dues. It is informative, never decoration —
-/// if a surface has no subscription period to show, it does not get a ring.
+/// A thin ring that encodes **money paid against the plan he is on**: empty
+/// when nothing has been paid, full once his payments cover the plan
+/// (`MemberTab.ringFill`, i.e. `paid / owed`) — what he owes from the day he
+/// joins, not the days he has used. It makes "who is paid up, who is behind"
+/// legible at a glance in Member rows, the member detail header and the Home
+/// dues cards.
+///
+/// Semantic change (ADR-0003): the ring no longer encodes the elapsed share of
+/// a stored period. Nothing stores an end date any more — one subscription runs
+/// on, money is a running tab, and the ring now reads it. Callers
+/// pass `tab.ringFill` (a plain `0..1` fraction) instead of a
+/// `Subscription`.
 ///
 /// Contract (other slices code against this exactly):
 ///
 /// - **Track** is `palette.border`; the **sweep** is the bucket colour
 ///   (`palette.error` overdue · `palette.warning` due soon · `palette.success`
 ///   active). Both are theme colours — never a hex.
-/// - **No subscription** (`progress == null`): the ring paints full and muted
-///   (`palette.secondary` at ~0.35 alpha) and says so — it never fakes a bucket
-///   the member does not have.
+/// - **No accruing stretch** (`progress == null`): the ring paints full and
+///   muted (`palette.secondary` at ~0.35 alpha) and says so — it never fakes a
+///   bucket the member does not have. Prefer `null` over `1.0` when the member
+///   has nothing accruing, so a surface never claims he is "100% paid".
 /// - Ordering: **12 o'clock, clockwise**; the arc is clamped to 0..1.
 /// - **Once per appear**: it fills empty → `progress` with [MotionSpec.fill]
-///   (300 ms in, 175 ms back out) and never loops. A renewal moves `progress`
-///   back down (reset) and the same transition plays — the app's one hero
-///   moment, ≤ 500 ms, never repeated on rebuild.
+///   (300 ms in, 175 ms back out) and never loops. A payment moves `progress`
+///   up and the same transition plays — the app's one hero moment, ≤ 500 ms,
+///   never repeated on rebuild.
 /// - **Reduce Motion** (`AppMotionConfig.of(context).reduceMotion`): no fill at
 ///   all — the final value is painted on the first frame.
 /// - **Cheap**: one [CustomPaint], one [BucketRingPainter.paint] pass, no
 ///   `saveLayer`, no blur, no shadow; repaints are driven by the controller's
 ///   ticker, so a fill allocates nothing per frame.
 /// - **Screen readers**: the ring always carries its own label
-///   ("63% of the membership period used" / "No subscription yet").
+///   ("63% paid of the membership" / "No subscription yet").
 ///
 /// ```dart
 /// DueRing(
-///   progress: periodProgress(member.current),
-///   bucket: member.bucket,
-///   child: InitialsAvatar(member.name),
+///   progress: entry.tab.owed == 0 ? null : entry.tab.ringFill,
+///   bucket: entry.bucket,
+///   child: InitialsAvatar(entry.member.name),
 /// )
 /// ```
 library;
@@ -40,35 +48,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../features/members/models/member.dart' show DueBucket, Subscription;
+import '../../features/members/models/member.dart' show DueBucket;
 import '../motion/app_motion_config.dart';
 import '../motion/motion_spec.dart';
 import '../theme/app_palette.dart';
-
-/// Elapsed fraction of [s]'s period at [today]: `0.0` the day it starts,
-/// `1.0` on the expiry date.
-///
-/// - Returns **`null`** when [s] is null (no subscription yet) — [DueRing] then
-///   paints the full muted ring, i.e. the painted fraction is `1.0` with no
-///   bucket colour and no "100% used" claim.
-/// - Guarded and clamped: `expiry == start` (or expiry before start, bad data)
-///   → `1.0`; a date before `start` → `0.0`; past expiry → `1.0`.
-/// - Day granularity, local dates, matching `Subscription.daysToExpiry`.
-///
-/// Callers that need a number when there is no period:
-/// `periodProgress(s) ?? 1.0`.
-double? periodProgress(Subscription? s, {DateTime? today}) {
-  if (s == null) return null;
-  final start = _day(s.startDate);
-  final expiry = _day(s.expiryDate);
-  final span = expiry.difference(start).inDays;
-  // Zero or negative span: nothing left to run, so the ring is full.
-  if (span <= 0) return 1.0;
-  final elapsed = _day(today ?? DateTime.now()).difference(start).inDays;
-  return (elapsed / span).clamp(0.0, 1.0);
-}
-
-DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
 
 /// The app's signature ring. See the library doc for the full contract.
 class DueRing extends StatelessWidget {
@@ -81,9 +64,11 @@ class DueRing extends StatelessWidget {
     this.child,
   });
 
-  /// Fraction of the period used: `0.0` just renewed → `1.0` at expiry
-  /// (clamped). `null` = no subscription yet → full muted ring, and [bucket] is
-  /// ignored. Use [periodProgress] to compute it.
+  /// Share of the owed money already paid: `0.0` nothing received →
+  /// `1.0` paid up (clamped). `MemberTab.ringFill` is exactly this value.
+  ///
+  /// `null` = nothing owed to encode (no subscription, or a legacy row
+  /// that bills nothing) → full muted ring, and [bucket] is ignored.
   final double? progress;
 
   /// Triage bucket; picks the sweep colour (overdue → `error`, due soon →
@@ -114,11 +99,11 @@ class DueRing extends StatelessWidget {
   }
 }
 
-/// "63% of the membership period used" / "No subscription yet".
+/// "63% paid of the membership" / "No subscription yet".
 String _semanticsLabel(double? progress) {
   if (progress == null) return 'No subscription yet';
   final percent = (progress.isFinite ? progress : 1.0).clamp(0.0, 1.0) * 100;
-  return '${percent.round()}% of the membership period used';
+  return '${percent.round()}% paid of the membership';
 }
 
 /// Owns the fill animation; [DueRing] stays a `StatelessWidget`.
@@ -157,7 +142,7 @@ class _DueRingFillState extends State<_DueRingFill>
   MotionScheme _scheme = MotionScheme.expressive;
   bool _started = false;
 
-  /// Progress actually painted: no subscription reads as a full ring.
+  /// Progress actually painted: nothing accruing reads as a full ring.
   double get _target => (widget.progress ?? 1.0).clamp(0.0, 1.0);
 
   @override
@@ -189,7 +174,8 @@ class _DueRingFillState extends State<_DueRingFill>
       _ctrl.value = _target;
       return;
     }
-    // Renewal: progress drops to ~0 and the ring re-fills — same transition.
+    // A payment landed: the paid share moves up and the ring re-fills — same
+    // transition.
     _fill(_target);
   }
 
@@ -215,8 +201,8 @@ class _DueRingFillState extends State<_DueRingFill>
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final noSubscription = widget.progress == null;
-    final sweepColor = noSubscription
+    final noStretch = widget.progress == null;
+    final sweepColor = noStretch
         ? palette.secondary.withValues(alpha: 0.35)
         : _bucketColor(palette, widget.bucket);
 
@@ -243,7 +229,8 @@ Color _bucketColor(AppPalette palette, DueBucket bucket) => switch (bucket) {
       DueBucket.active => palette.success,
     };
 
-/// Paints a [DueRing]: border-coloured track + elapsed sweep from 12 o'clock.
+/// Paints a [DueRing]: border-coloured track + paid-share sweep from 12
+/// o'clock.
 ///
 /// Public so a surface that owns its own canvas (a chart, a custom header) can
 /// draw the same motif. Pass [animation] to let a controller's ticker drive the
