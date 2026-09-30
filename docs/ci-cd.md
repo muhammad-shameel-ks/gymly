@@ -128,6 +128,27 @@ release is never tagged; the following run then aborts with *untagged, merged
 release PRs outstanding*. Recovering means tagging by hand and relabelling the PR
 (`autorelease: pending` → `autorelease: tagged`).
 
+## Android release gotchas
+
+`app/android/app/src/main/AndroidManifest.xml` is the only manifest a release
+build sees. The Flutter template declares `INTERNET` in `src/debug` and
+`src/profile` for the tool (hot reload, breakpoints), and a release APK inherits
+`src/main` alone — so a release build without that line installs, launches, and
+then fails every Supabase call with `ClientException … Failed host lookup`. That
+is how `v1.0.0` shipped; `v1.0.1` fixed it. No Dart test can see this class of
+bug, so CI asserts the permission on the **built release APK** (`Network
+permission in the release APK` in `ci.yml`), and a released artifact can be
+checked by hand the same way:
+
+```bash
+gh release download vX.Y.Z -p 'gymly-vX.Y.Z-arm64-v8a.apk' -D /tmp/release
+"$ANDROID_HOME"/build-tools/*/aapt2 dump badging /tmp/release/*.apk | grep uses-permission
+```
+
+Anything that is only true of a release build (manifest merging, R8, the
+signing config, `versionCode`/`versionName`) belongs in that job, on the
+artifact, not in a unit test.
+
 ## Not covered
 
 - **iOS**: needs macOS runners and an Apple certificate/provisioning profile.
