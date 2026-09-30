@@ -1,14 +1,26 @@
 name: Release
 
-# Two triggers, one pipeline:
+# Every push to `main` releases. One run does the whole thing:
 #
-#  1. Push to `main` → release-please opens/updates a release PR (version bump +
-#     CHANGELOG). Merging that PR is what cuts a release: release-please tags and
-#     publishes, and the `android` job in *this same run* attaches the artifacts.
-#     It must be the same run: a tag created with the default GITHUB_TOKEN does
-#     not trigger another workflow run, so a tag-triggered build would never fire.
-#  2. A manually pushed `v*` tag (or a workflow_dispatch naming a tag) → build and
-#     attach, so a release can be rebuilt without re-tagging.
+#   release-please  → opens/updates the release PR (version bump + CHANGELOG)
+#   publish         → merges that PR, then tags + publishes via release-please
+#   android         → builds the signed APKs/AAB and attaches them
+#
+# It has to be one run. A tag or merge made with the default `GITHUB_TOKEN`
+# does not trigger another workflow run, so `publish` merges the release PR and
+# then cuts the tag itself, and `android` is gated on that tag in the same run.
+#
+# Commits decide the bump: `fix:` → patch, `feat:` → minor, `feat!:`/`BREAKING
+# CHANGE:` → major. `chore:`/`ci:`/`docs:`/`build:` do not appear in the
+# changelog and do not bump, so a push carrying only those opens no release PR
+# and `publish` finds nothing to merge — the run stops there.
+#
+# Branch model: `main` is the release branch. Work lands through short-lived
+# branches (`feat/<slug>`, `fix/<slug>`, `hotfix/<slug>`), and a hotfix is just a
+# `fix:` branch cut from `main` and merged back the same way.
+#
+# Escape hatches: push a `v*` tag yourself, or `workflow_dispatch` with an
+# existing tag to rebuild and re-attach the artifacts.
 #
 # Artifacts: per-ABI release APKs for sideloading plus the AAB for Play, signed
 # with the upload key when the ANDROID_KEYSTORE_* secrets exist (debug-signed
@@ -43,8 +55,8 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
-      released: ${{ steps.release.outputs.release_created }}
-      tag: ${{ steps.release.outputs.tag_name }}
+      prs_created: ${{ steps.release.outputs.prs_created }}
+      pr: ${{ steps.release.outputs.pr }}
     steps:
       - uses: googleapis/release-please-action@v5
         id: release
@@ -52,12 +64,64 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+  publish:
+    name: Merge, tag, publish
+    needs: release-please
+    if: needs.release-please.outputs.prs_created == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.verify.outputs.tag }}
+    steps:
+      - name: Merge the release PR
+        # `gh pr merge` here is the workflow's own token, so this push to `main`
+        # triggers no further run — which is why the tag is cut in the step
+        # below rather than by a second workflow run. GitHub computes a fresh
+        # PR's mergeability asynchronously, so the first attempt can race it.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ fromJSON(needs.release-please.outputs.pr).number }}
+          PR_RAW: ${{ needs.release-please.outputs.pr }}
+        run: |
+          echo "release PR: #$PR"
+          echo "action output: $PR_RAW"
+          for attempt in 1 2 3 4 5; do
+            if gh pr merge "$PR" --squash --delete-branch; then
+              exit 0
+            fi
+            echo "attempt $attempt: not mergeable yet, retrying"
+            sleep 5
+          done
+          echo "::error::could not merge release PR #$PR"
+          exit 1
+      - uses: googleapis/release-please-action@v5
+        id: tag
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          # Tag the PR merged above (still labelled `autorelease: pending`)
+          # without opening the next release PR in the same breath.
+          skip-github-pull-request: true
+      - name: Verify the tag
+        # Derived from the manifest the merge just bumped rather than from the
+        # action's per-path outputs, so the tag format is checked here too:
+        # `v<version>` holds while `include-component-in-tag` stays false.
+        id: verify
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(gh api "repos/${{ github.repository }}/contents/.release-please-manifest.json?ref=main" \
+            --jq .content | base64 -d | jq -r 'to_entries[0].value')
+          tag="v$version"
+          gh api "repos/${{ github.repository }}/git/ref/tags/$tag" >/dev/null \
+            || { echo "::error::release-please did not create $tag"; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   android:
     name: Android artifacts
-    needs: release-please
+    needs: [release-please, publish]
     if: |
       always() && (
-        needs.release-please.outputs.released == 'true' ||
+        needs.publish.outputs.tag != '' ||
         startsWith(github.ref, 'refs/tags/v') ||
         github.event_name == 'workflow_dispatch'
       )
@@ -73,7 +137,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.inputs.tag || needs.release-please.outputs.tag || github.ref }}
+          ref: ${{ github.event.inputs.tag || needs.publish.outputs.tag || github.ref }}
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -88,7 +152,7 @@ jobs:
         # From the trigger itself: the dispatch input, the tag release-please
         # just cut, or the tag that was pushed. No `git describe`, so the
         # checkout depth cannot make this fail.
-        run: echo "TAG=${{ github.event.inputs.tag || needs.release-please.outputs.tag || github.ref_name }}" >> "$GITHUB_ENV"
+        run: echo "TAG=${{ github.event.inputs.tag || needs.publish.outputs.tag || github.ref_name }}" >> "$GITHUB_ENV"
       - name: Write the signing config
         if: env.KEYSTORE_B64 != ''
         run: |

@@ -9,21 +9,40 @@ so every workflow runs with `working-directory: app`.
 | File | Trigger | What it does |
 |---|---|---|
 | `.github/workflows/ci.yml` | PR to `main`, push to `main`, manual | `flutter pub get`, `flutter analyze`, `flutter test`, and in parallel the same release-mode split APKs the release builds — uploaded as artifacts and signature-checked. Docs-only changes are skipped (`paths-ignore`). |
-| `.github/workflows/release.yml` | push to `main`, push of a `v*` tag, manual (with a tag) | On `main`: release-please opens/updates the release PR. When a release is cut — or a tag is pushed by hand — the `android` job builds the signed AAB + per-ABI APKs and attaches them to the GitHub Release. |
+| `.github/workflows/release.yml` | push to `main`, push of a `v*` tag, manual (with a tag) | On `main`: release-please opens/updates the release PR, `publish` merges it, release-please tags and publishes, and `android` builds the signed AAB + per-ABI APKs and attaches them. A hand-pushed `v*` tag or a `workflow_dispatch` only builds and attaches. |
 | `.github/dependabot.yml` | weekly / monthly | Dependency PRs for pub, Gradle and the workflow actions. |
 
 Both workflows share a `concurrency` group per ref: a superseded CI run is
-cancelled, a release run never is.
+cancelled, a release run never is — a second push to `main` queues behind the
+release in flight instead of racing it.
 
-### Why release-please and the build share one workflow
+### Branch model
 
-A tag created with the default `GITHUB_TOKEN` does **not** trigger another
-workflow run. If release-please published in one workflow and a tag-triggered
-workflow built the APKs, the artifacts would never be produced. So
-`release.yml` runs release-please first and gates the build job on its
-`release_created` output in the same run. A hand-pushed `v*` tag still works, and
-`workflow_dispatch` with a tag rebuilds and re-attaches artifacts for an
-existing release.
+`main` is the release branch: it always holds the last released state, and every
+push that carries a bump-worthy commit is released automatically.
+
+| Branch | Cut from | Merges into | Purpose |
+|---|---|---|---|
+| `feat/<slug>` | `main` | `main` | new behaviour, minor bump |
+| `fix/<slug>` | `main` | `main` | defect, patch bump |
+| `hotfix/<slug>` | `main` | `main` | urgent defect: same path as `fix/`, cut from the released `main` so it cannot carry unreleased work |
+
+Short-lived by design: one branch, one PR, deleted on merge. There is no
+integration branch — CI on the PR (analysis, tests, a release-mode APK build and
+the INTERNET assertion on that APK) is the gate, and `main` only ever receives
+PRs.
+
+### Why release-please, the merge and the build share one workflow
+
+A tag or merge made with the default `GITHUB_TOKEN` does **not** trigger another
+workflow run. If release-please opened the release PR in one workflow and the
+APKs were built by a tag-triggered workflow, nothing would ever be published.
+So one run does all three steps: `release-please` opens the PR, `publish` merges
+it (`gh pr merge`, retrying while GitHub computes mergeability) and runs
+release-please again with `skip-github-pull-request: true` to cut the tag, and
+`android` is gated on the tag that step verified. A hand-pushed `v*` tag still
+works, and `workflow_dispatch` with a tag rebuilds and re-attaches artifacts for
+an existing release.
 
 ## Caching
 
@@ -74,20 +93,31 @@ Without them CI still passes and still produces APKs — they are debug-signed.
 
 ## Cutting a release
 
-1. Merge work to `main` with [conventional commit](https://www.conventionalcommits.org)
-   messages: `fix:` bumps the patch, `feat:` the minor, `feat!:` / `BREAKING CHANGE:`
-   the major. `docs:`/`ci:`/`chore:` do not appear in the changelog.
-2. release-please opens (and keeps updating) a `chore(release): X.Y.Z` PR that
-   bumps `app/pubspec.yaml` and writes `app/CHANGELOG.md`.
-3. Merge that PR. release-please tags `vX.Y.Z` and publishes the GitHub Release;
-   the same run builds and attaches `gymly-vX.Y.Z-<abi>.apk` (arm64-v8a,
-   armeabi-v7a, x86_64) and `gymly-vX.Y.Z.aab`.
-4. Manual escape hatches: push a `vX.Y.Z` tag yourself, or run the Release
+Releasing is a side effect of merging to `main`; there is no button.
+
+1. Open a PR to `main` from a `feat/`, `fix/` or `hotfix/` branch with a
+   [conventional commit](https://www.conventionalcommits.org) message: `fix:`
+   bumps the patch, `feat:` the minor, `feat!:` / `BREAKING CHANGE:` the major.
+   `docs:`/`ci:`/`chore:`/`build:` do not appear in the changelog and do not bump
+   — a push carrying only those opens no release PR and the pipeline stops after
+   the `release-please` job.
+2. Merge the PR. release-please opens (and keeps updating) a `chore(release): X.Y.Z`
+   PR that bumps `app/pubspec.yaml` and writes `app/CHANGELOG.md`; `publish`
+   merges it and tags `vX.Y.Z`; `android` attaches `gymly-vX.Y.Z-<abi>.apk`
+   (arm64-v8a, armeabi-v7a, x86_64) and `gymly-vX.Y.Z.aab` to the release.
+   All three jobs run in the same workflow run, ~12 minutes end to end.
+3. Manual escape hatches: push a `vX.Y.Z` tag yourself, or run the Release
    workflow with `tag: vX.Y.Z` to rebuild and re-attach.
 
+The release PR is merged without waiting for its own CI run: it only bumps the
+version, the changelog and the manifest, and the artifact job builds from the
+tagged commit anyway. That CI run is a redundant gate, and it is left visible
+rather than suppressed, because `paths-ignore` cannot tell a release PR apart
+from a dependency PR that edits `app/pubspec.yaml`.
+
 The first release (`v1.0.0`) was cut by hand before release-please existed;
-`.release-please-manifest.json` records `1.0.0` so the next release bumps from
-there.
+`.release-please-manifest.json` records the last released version so the next
+release bumps from there.
 
 `separate-pull-requests` must stay `true`, even though there is only one package.
 With it `false`, release-please runs its merge plugin, which names the release
