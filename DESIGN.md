@@ -10,7 +10,8 @@ per ADR-0003).
 **In:** owner auth, multiple gyms per owner, plans, members, subscriptions (stretches)
 with part payments and due triage, cancel / reactivate / change plan, payment records
 kept at the desk (record, correct, delete), minimal inquiries with convert-to-member,
-dues dashboard.
+dues dashboard, and in-app updates: the installed version on Profile with one check that
+downloads and installs the signed APK the release pipeline publishes.
 
 **Out:** payment gateways, refunds, staff logins, attendance, trainers, expenses,
 auto-reminders, diet/workout plans, offline write-queue, realtime. The app **records**
@@ -85,6 +86,9 @@ Four bottom tabs: **Home (Dues) · Members · Leads · Plans**. ≤ 3 taps to an
 - **Leads:** quick-add (name, phone, note) + list by status; row actions Call / WhatsApp /
   Convert to member.
 - **Plans:** name + ₹ + duration chips; create/edit/archive; assign from member detail.
+- **Profile** (opened from Home's header, no tab): owner identity, gym count,
+  appearance, the installed version with **Check for update** — download and install the
+  published APK (`docs/app-updates.md`) — and log out.
 
 ## 4. Visual system (per attached Mobile UI/UX Rules spec)
 

@@ -97,6 +97,30 @@ jobs:
           APK=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           "$AAPT2" dump badging "$APK" | grep -q "android.permission.INTERNET" \
             || { echo "::error::$APK declares no INTERNET permission - release builds would have no network"; exit 1; }
+      - name: Install permission in the release APK
+        # The in-app updater (`features/updater`) installs the APK it downloads
+        # from the release, and Android 8+ refuses an install started by an app
+        # without REQUEST_INSTALL_PACKAGES. Like INTERNET, it has to be in
+        # `src/main` to reach a release build, and like INTERNET no Dart test
+        # can see a merged manifest - so it is asserted on the artifact.
+        run: |
+          AAPT2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          APK=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          "$AAPT2" dump badging "$APK" | grep -q "android.permission.REQUEST_INSTALL_PACKAGES" \
+            || { echo "::error::$APK declares no REQUEST_INSTALL_PACKAGES permission - the updater could not install an update"; exit 1; }
+      - name: No borrowed permissions in the release APK
+        # A library manifest merges into this one, so `open_filex`'s storage and
+        # media read permissions would ship unless `src/main` removes them. Only
+        # a merged manifest can see this, so it is asserted on the artifact.
+        run: |
+          AAPT2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          APK=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          for permission in READ_EXTERNAL_STORAGE READ_MEDIA_IMAGES READ_MEDIA_VIDEO READ_MEDIA_AUDIO; do
+            if "$AAPT2" dump badging "$APK" | grep -q "android.permission.$permission"; then
+              echo "::error::$APK declares android.permission.$permission - the app opens only files it wrote itself"; exit 1
+            fi
+          done
+          echo "$APK declares no storage or media permission"
       - name: Signing check
         run: |
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)

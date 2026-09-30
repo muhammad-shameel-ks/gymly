@@ -134,6 +134,10 @@ Releasing is a side effect of merging to `main`; there is no button.
    merges it and tags `vX.Y.Z`; `android` attaches `gymly-vX.Y.Z-<abi>.apk`
    (arm64-v8a, armeabi-v7a, x86_64) and `gymly-vX.Y.Z.aab` to the release.
    All three jobs run in the same workflow run, ~12 minutes end to end.
+
+   Nobody has to find that release page by hand: the app reads it itself —
+   Profile shows the installed version and can download and install the APK for
+   the device (`docs/app-updates.md`).
 3. Manual escape hatches: push a `vX.Y.Z` tag yourself, or run the Release
    workflow with `tag: vX.Y.Z` to rebuild and re-attach.
 

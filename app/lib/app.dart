@@ -17,7 +17,7 @@
 /// navigator or restarting the app.
 ///
 /// Profile: `/profile` is a top-level route inside the shell (its own
-/// branch, no bottom tab) hosting the theme switcher + logout.
+/// branch, no bottom tab) hosting the theme switcher, the updater and logout.
 ///
 /// Slice-provider unification (single instances, no duplicates):
 /// - canonical gym selection: `features/gyms/data/selected_gym.dart`
