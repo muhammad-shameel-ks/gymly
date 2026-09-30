@@ -18,7 +18,7 @@ V1 scope, IA, visual/motion system, data contract: see `DESIGN.md` at the repo r
 
 ### CI/CD
 
-`main` is the release branch, and merging a `feat/`, `fix/` or `hotfix/` PR into
-it publishes a release automatically — `fix` a patch, `feat` a minor, breaking a
-major; `chore`/`ci`/`docs`/`build` release nothing. Workflows, caching, the
-release flow and Android signing: see `docs/ci-cd.md`.
+`main` is the release branch: merging a `feat/`, `fix/` or `hotfix/` PR into it
+publishes a release automatically. Commit types and what they release: the
+`commit-standards` skill. Workflows, caching, the release flow and Android
+signing: see `docs/ci-cd.md`.
