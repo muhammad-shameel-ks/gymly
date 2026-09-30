@@ -1,17 +1,18 @@
-# gymly
+# gymly — app
 
-A new Flutter project.
+The Flutter client. Product overview, features and downloads: [../README.md](../README.md).
 
-## Getting Started
+```bash
+flutter pub get
+flutter run            # uses the bundled public Supabase project
+flutter test
+flutter analyze
+```
 
-This project is a starting point for a Flutter application.
+Point it somewhere else with
+`--dart-define=SUPABASE_URL=… --dart-define=SUPABASE_ANON_KEY=…`.
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Layout: `lib/features/<feature>/` (data, providers, screens, widgets),
+`lib/core/` (theme, motion, brand signature, shared widgets, Supabase client).
+The product and UX contract is [../DESIGN.md](../DESIGN.md) and the vocabulary is
+[../GLOSSARY.md](../GLOSSARY.md).
