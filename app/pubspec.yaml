@@ -42,6 +42,17 @@ dependencies:
   flutter_dotenv: ^6.0.1
   shared_preferences: ^2.5.5
 
+  # In-app updater (`features/updater`): the installed version and the device's
+  # ABI come from the platform, the release comes from GitHub over `http`, the
+  # APK lands in the app's temporary directory, and `open_filex` hands it to
+  # Android's installer through its own FileProvider (no provider of our own to
+  # declare, and no `file://` URI to leak).
+  package_info_plus: ^10.2.1
+  device_info_plus: ^13.2.0
+  path_provider: ^2.1.6
+  http: ^1.6.0
+  open_filex: ^4.7.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

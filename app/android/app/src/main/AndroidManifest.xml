@@ -1,9 +1,36 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- The app is online-only: every screen reads and writes Supabase. The
          debug/profile manifests declare this for the Flutter tool (hot reload,
          breakpoints); release builds do NOT inherit those, so without this line
          a release APK/AAB has no network at all. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- The in-app updater (`features/updater`) installs the signed APK it
+         downloads from the GitHub Release. Android 8+ refuses an APK install
+         started by an app without this permission, so the "Install update"
+         button would open the installer and be turned away. The owner still
+         grants "install unknown apps" for Gymly the first time; the card says
+         so before they tap. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- `open_filex` (the updater's handoff to the installer) declares storage
+         and media read permissions for its general file-opening case. The
+         updater only ever opens a file it wrote into the app's own temporary
+         directory, which needs no permission at all, so the merged ones are
+         removed: a gym app that asks to read the owner's photos is a lie the
+         manifest would tell on Play. CI asserts their absence on the built
+         release APK, because only a merged manifest can see this. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        tools:node="remove"/>
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_IMAGES"
+        tools:node="remove"/>
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_VIDEO"
+        tools:node="remove"/>
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_AUDIO"
+        tools:node="remove"/>
     <application
         android:label="gymly"
         android:name="${applicationName}"

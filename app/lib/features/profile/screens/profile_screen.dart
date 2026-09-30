@@ -1,4 +1,5 @@
-/// Profile: owner identity, gym count, theme mode switcher and logout.
+/// Profile: owner identity, gym count, theme mode switcher, the app version
+/// and updater, and logout.
 ///
 /// Reachable at `/profile` (top-level route inside the shell, no bottom tab).
 /// Colours come from `context.palette`; sizes from [AppSpace]/[AppRadius].
@@ -14,6 +15,8 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/theme/theme_mode.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../gyms/providers/gyms_providers.dart';
+import '../../updater/providers/updater_providers.dart';
+import '../../updater/widgets/update_card.dart';
 
 /// Owner profile + appearance + sign-out.
 class ProfileScreen extends ConsumerWidget {
@@ -56,6 +59,15 @@ class ProfileScreen extends ConsumerWidget {
               style: AppType.caption.copyWith(color: p.secondary),
             ),
             const SizedBox(height: AppSpace.lg),
+            // The updater installs signed APKs from the GitHub Release, so it
+            // is Android-only: iOS ships through the App Store and has no
+            // artifact to install (`docs/ci-cd.md` § Not covered).
+            if (ref.watch(isAndroidProvider)) ...[
+              const _SectionLabel('App'),
+              const SizedBox(height: AppSpace.sm),
+              const UpdateCard(),
+              const SizedBox(height: AppSpace.lg),
+            ],
             const _SectionLabel('Account'),
             const SizedBox(height: AppSpace.sm),
             _DangerButton(
