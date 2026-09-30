@@ -89,6 +89,15 @@ The first release (`v1.0.0`) was cut by hand before release-please existed;
 `.release-please-manifest.json` records `1.0.0` so the next release bumps from
 there.
 
+`separate-pull-requests` must stay `true`, even though there is only one package.
+With it `false`, release-please runs its merge plugin, which names the release
+branch `release-please--branches--main` — no component — while the dart strategy's
+branch component is `gymly`. The tag step compares the two, refuses the merged PR
+(`PR component: undefined does not match configured component: gymly`), and the
+release is never tagged; the following run then aborts with *untagged, merged
+release PRs outstanding*. Recovering means tagging by hand and relabelling the PR
+(`autorelease: pending` → `autorelease: tagged`).
+
 ## Not covered
 
 - **iOS**: needs macOS runners and an Apple certificate/provisioning profile.
