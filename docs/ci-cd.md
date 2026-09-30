@@ -11,10 +11,12 @@ so every workflow runs with `working-directory: app`.
 | `.github/workflows/ci.yml` | PR to `main`, push to `main`, manual | `flutter pub get`, `flutter analyze`, `flutter test`, and in parallel the same release-mode split APKs the release builds — uploaded as artifacts and signature-checked. Docs-only changes are skipped (`paths-ignore`). |
 | `.github/workflows/release.yml` | push to `main`, push of a `v*` tag, manual (with a tag) | On `main`: release-please opens/updates the release PR, `publish` merges it, release-please tags and publishes, and `android` builds the signed AAB + per-ABI APKs and attaches them. A hand-pushed `v*` tag or a `workflow_dispatch` only builds and attaches. |
 | `.github/dependabot.yml` | weekly / monthly | Dependency PRs for pub, Gradle and the workflow actions. |
+| `.github/workflows/opencode.yml` | issue opened or labelled | Runs the OpenCode agent on an issue that carries `ready-for-agent`; it implements the issue and opens a PR. See [Agent on issues](#agent-on-issues). |
 
-Both workflows share a `concurrency` group per ref: a superseded CI run is
+CI and Release share a `concurrency` group per ref: a superseded CI run is
 cancelled, a release run never is — a second push to `main` queues behind the
-release in flight instead of racing it.
+release in flight instead of racing it. The agent workflow groups per issue
+instead, so one issue never runs twice at once.
 
 ### Branch model
 
@@ -31,6 +33,27 @@ Short-lived by design: one branch, one PR, deleted on merge. There is no
 integration branch — CI on the PR (analysis, tests, a release-mode APK build and
 the INTERNET assertion on that APK) is the gate, and `main` only ever receives
 PRs.
+
+### Agent on issues
+
+`.github/workflows/opencode.yml` runs the OpenCode agent when an issue carries
+the `ready-for-agent` label — opened with it, or labelled later. There is no
+comment command to type. The label *is* the trigger because this repository is
+public: anyone can open an issue, but only someone with write access can label
+one, so a stranger cannot start a run or feed the agent an injected prompt.
+
+The agent reads `AGENTS.md`, implements the issue on a branch, runs
+`flutter analyze` and `flutter test`, and opens a pull request with a
+conventional-commit title. It is told never to push to `main` and never to
+merge — merging `main` publishes a release (above) — so its output always
+arrives as a reviewable PR, and an issue it cannot act on gets a comment
+instead of a PR. Runs are serialized per issue and capped at 30 minutes;
+`share: false` keeps the session transcript private.
+
+Setup — the GitHub App install and the `OPENCODE_API_KEY` secret — is
+`scripts/setup-opencode-agent.sh`. Both must exist before the first run: without
+the app the OIDC token exchange fails, without the secret the agent has no
+credentials.
 
 ### Why release-please, the merge and the build share one workflow
 

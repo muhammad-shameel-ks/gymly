@@ -1,0 +1,72 @@
+name: opencode
+
+# The agent works an issue on its own — no `/oc` comment needed. An issue that
+# carries the `ready-for-agent` label, whether it is opened with it or labelled
+# later, starts a run.
+#
+# The label is the trigger *because* this repository is public: anyone can open
+# an issue, but only someone with write access can label one, so a stranger
+# cannot make the agent run (or feed it an injected prompt). The agent's blast
+# radius is a pull request — see the prompt below, it never touches `main`.
+#
+# Runs with the OpenCode GitHub App's installation token (OIDC): install
+# github.com/apps/opencode-agent on this repository and store the
+# OPENCODE_API_KEY secret. `scripts/setup-opencode-agent.sh` walks both steps.
+# Without the app, set `use_github_token: true`, pass `GITHUB_TOKEN` in `env`,
+# and grant `contents: write`, `pull-requests: write`, `issues: write` here.
+
+on:
+  issues:
+    types: [opened, labeled]
+
+# One run per issue: a label added while a run is in flight waits, never races.
+concurrency:
+  group: opencode-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  opencode:
+    if: contains(github.event.issue.labels.*.name, 'ready-for-agent')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Run opencode
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        with:
+          model: opencode-go/deepseek-v4.1-flash
+          # Public repository: keep the session transcript out of the open.
+          share: false
+          prompt: |
+            You are working in the Gymly repository: a Flutter app in `app/`, a
+            Supabase schema in `supabase/`, and local ticket files in `.scratch/`.
+
+            Read `AGENTS.md` first, then the issue above.
+
+            1. Decide whether the issue is actionable. If it is a question, a note
+               to self, or is missing something you cannot infer from the repo,
+               comment what you need and stop. Do not open a pull request.
+            2. Otherwise implement it end to end, scoped to this issue. Read the
+               code you are about to change and follow the conventions already in
+               that file. No unrelated refactors, no new abstractions, no stubs,
+               no TODOs, no "follow-up" placeholders.
+            3. Verify with `cd app && flutter analyze && flutter test` — both must
+               pass — and exercise the path you changed if it has a runtime
+               surface.
+            4. Open a pull request against `main`, titled as a conventional commit
+               (`fix:` for a defect, `feat:` for new behaviour) with a body that
+               says what changed, how you verified it, and anything you could not
+               do.
+            5. Never push to `main` and never merge: `main` is the release branch,
+               so a merge publishes a release immediately, unreviewed.
