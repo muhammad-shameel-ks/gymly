@@ -34,7 +34,7 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  supabase_flutter: ^2.17.2
+  supabase_flutter: ^2.18.0
   flutter_riverpod: ^3.4.3
   go_router: ^18.0.2
   intl: ^0.20.3
@@ -47,8 +47,8 @@ dependencies:
   # APK lands in the app's temporary directory, and `open_filex` hands it to
   # Android's installer through its own FileProvider (no provider of our own to
   # declare, and no `file://` URI to leak).
-  package_info_plus: ^10.2.1
-  device_info_plus: ^13.2.0
+  package_info_plus: ^10.2.2
+  device_info_plus: ^13.3.0
   path_provider: ^2.1.6
   http: ^1.6.0
   open_filex: ^4.7.0
